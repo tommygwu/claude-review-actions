@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "classes": [
+    "completed",
+    "out-of-usage",
+    "auth-failed",
+    "reviewer-errored",
+    "never-posted",
+    "startup-failure",
+    "unknown"
+  ]
+}

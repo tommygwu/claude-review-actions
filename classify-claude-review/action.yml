@@ -1,0 +1,73 @@
+name: Classify claude-review outcome
+description: >-
+  Derive one closed-vocabulary failure class from the claude-code-action
+  execution file so a red review check says WHY it is red. github-fix keys its
+  rerun-vs-circuit-open decision on the CLAUDE_REVIEW_FAILURE_CLASS marker this
+  action emits: out-of-usage and auth-failed are terminal (a rerun hits the same
+  wall), reviewer-errored is transient (one re-kick is worth it). This action
+  fails on any non-completed class so the marker lands in `gh run view
+  --log-failed`. The shared class vocabulary lives in failure-classes.json.
+
+inputs:
+  execution_file:
+    description: >-
+      Path to the claude-code-action execution_file output
+      (steps.<review-step-id>.outputs.execution_file).
+    required: true
+  action_outcome:
+    description: >-
+      The review action step's outcome (steps.<review-step-id>.outcome):
+      success | failure | cancelled.
+    required: true
+
+outputs:
+  class:
+    description: >-
+      The derived failure class, one of the values in failure-classes.json.
+    value: ${{ steps.classify.outputs.class }}
+
+runs:
+  using: composite
+  steps:
+    - id: classify
+      shell: bash
+      env:
+        ACTION_OUTCOME: ${{ inputs.action_outcome }}
+        EXECUTION_FILE: ${{ inputs.execution_file }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+        # An interpreter crash must still yield a marker; the classifier's
+        # stderr lands in this step's log for diagnosis. The classifier is
+        # bundled with the action, so it is always present here — the caller
+        # never needs a repo-local copy or a checkout guard.
+        if ! class=$(node "$ACTION_PATH/classify-claude-review-execution.mjs" "$EXECUTION_FILE"); then
+          class="unknown"
+        fi
+        echo "class=$class" >> "$GITHUB_OUTPUT"
+        echo "CLAUDE_REVIEW_FAILURE_CLASS=${class}"
+        # Canary for SDK shape drift: on any failure class, dump the head of
+        # the execution file so a misread typed enum is diagnosable from the
+        # run log instead of silently degrading to reviewer-errored/unknown.
+        if [ "$class" != "completed" ] && [ -n "$EXECUTION_FILE" ] && [ -f "$EXECUTION_FILE" ]; then
+          echo "--- execution file head (diagnostic) ---"
+          head -c 800 "$EXECUTION_FILE" || true
+          echo ""
+          echo "--- end execution file head ---"
+        fi
+        case "$class" in
+          completed)
+            echo "::notice::claude-review completed; comment verification follows."
+            exit 0 ;;
+          out-of-usage)
+            echo "::error::claude-review failed because the Claude provider rejected the run for usage limits (class=out-of-usage). This is NOT a reviewer defect — a rerun will hit the same limit until usage resets." ;;
+          auth-failed)
+            echo "::error::claude-review failed provider authentication (class=auth-failed). Repair the CLAUDE_CODE_OAUTH_TOKEN secret; reruns cannot fix a broken credential." ;;
+          reviewer-errored)
+            echo "::error::claude-review ran (real turns and cost recorded) but ended in an error before finishing (class=reviewer-errored). Likely transient — a rerun should succeed." ;;
+          startup-failure)
+            echo "::error::claude-review produced no execution output (class=startup-failure); the reviewer never started." ;;
+          *)
+            echo "::error::claude-review failed with no classifiable evidence (class=unknown)." ;;
+        esac
+        exit 1
