@@ -51,6 +51,26 @@ export function isMainModule(argvPath) {
   }
 }
 
+// startup-failure does not prove the reviewer never started. It is the class
+// for "no classifiable execution output", and several causes share that shape:
+// the reviewer never started; usage exhaustion killed it before any usage
+// signal was recorded; the step was cancelled; or the execution-file write
+// itself failed. claude-code-action writes that file with whatever messages
+// accumulated — from its SDK catch handler on a thrown request, and from the
+// post-loop path when the stream ends with no result — so a first-request
+// refusal lands a literal "[]" or an init-only stream, exactly what a non-usage
+// startup error lands. The refusal reason survives only as prose: the review
+// step's job log ("SDK execution error: …") and its ::error:: annotation
+// ("Action failed with error: …"). Neither is an action output, and neither is
+// reachable from a later step in the same job.
+//
+// Do not infer usage from message *shape* — no typed usage evidence exists on
+// this path. The step annotation names the causes instead of asserting one.
+//
+// Verified against anthropics/claude-code-action base-action/src/run-claude-sdk.ts
+// and base-action/src/execution-file.ts as of 2026-07; the root action exposes
+// no conclusion output. If upstream adds a typed failure output or changes the
+// execution-file envelope, revisit this note and the startup-failure annotation.
 export function classifyMessages(messages) {
   if (!Array.isArray(messages) || messages.length === 0) {
     return "startup-failure";
@@ -135,9 +155,11 @@ export function main({ argv, env }) {
     try {
       fileContent = readFileSync(executionFilePath, "utf8");
     } catch (error) {
-      // Absence means the reviewer never wrote output (startup-failure). Any
-      // other read failure (EACCES, EISDIR, file too large) means output may
-      // exist — do not assert "never started"; escalate loudly instead.
+      // ENOENT means no execution output was written; on a failed outcome that
+      // is startup-failure (see the note above classifyMessages). Any other read
+      // failure (EACCES, EISDIR, too large) means output may exist, so on a
+      // failed outcome escalate to unknown rather than guessing. A successful
+      // outcome is already completed regardless of readability.
       const { code, message } = getErrorDetails(error);
       if (code !== "ENOENT" && actionOutcome !== "success") {
         process.stderr.write(`execution file unreadable (${code}): ${message}\n`);

@@ -55,7 +55,11 @@ which this repo's own tests assert the classifier against:
   credential; reruns cannot fix a broken one.
 - `reviewer-errored` — the reviewer ran (real turns and cost recorded) but
   errored before finishing. **Transient:** a rerun should succeed.
-- `startup-failure` — no execution output; the reviewer never started.
+- `startup-failure` — no execution output at all. **Not proof the reviewer never
+  started:** usage exhaustion before a usage signal, a cancelled step, or a
+  failed execution-file write produce the same shape. Distinct from `unknown`,
+  which means output *was* written but could not be read.
+  See [Why `startup-failure` is ambiguous](#why-startup-failure-is-ambiguous).
 - `unknown` — no classifiable evidence (e.g. an unparseable execution file).
 - `never-posted` — **workflow-derived, not emitted by this action.** The
   caller's verify/fallback steps emit it when a `completed` run left no valid
@@ -64,6 +68,36 @@ which this repo's own tests assert the classifier against:
 Classification reads typed fields from the SDK message array — never prose, and
 never a model call. `auth-failed` outranks `out-of-usage` because a broken
 credential is deterministic across reruns.
+
+### Why `startup-failure` is ambiguous
+
+`out-of-usage` is derived from typed evidence *inside* the execution file. When
+usage exhaustion kills the run before that evidence is recorded, the class
+degrades to `startup-failure`, and no amount of logic here can recover it:
+
+- This action's only inputs are `execution_file` and `action_outcome`. On this
+  path `action_outcome` is `failure` for every cause.
+- `claude-code-action` writes the execution file with whatever messages
+  accumulated — from its SDK catch handler on a thrown request, and from the
+  post-loop path when the stream ends with no `result`. So a first-request
+  refusal produces a literal `[]`, or an init-only stream, which is exactly what
+  a non-usage startup error (bad model, network failure, malformed prompt)
+  produces.
+- The provider's actual refusal reason survives only as prose: the *review*
+  step's job log (`SDK execution error: …`) and that step's `::error::`
+  annotation (`Action failed with error: …`). Neither is an action output, and
+  neither is readable by a later step in the same job.
+
+So the honest handling is to say so: the `startup-failure` annotation names the
+causes and points the operator at the review step's log and annotation, rather
+than asserting a startup problem that may not exist.
+
+**Known consequence, not yet solved.** `startup-failure` is rerun-eligible
+downstream — correct for a genuine startup problem. But a usage-exhausted run
+that lands here is not simply charged one wasted rerun: consumers that requeue
+after a usage reset key on the `out-of-usage` verdict, so this run falls outside
+that sweep and stays red with no automated path back. Closing that gap is a
+consumer-side change, not a producer one; it is tracked separately.
 
 For every non-`completed` class the action prints a per-class `::error::`
 annotation and **exits non-zero**, so the check fails and the marker lands in

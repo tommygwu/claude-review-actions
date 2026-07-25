@@ -158,6 +158,62 @@ describe("classifyExecutionFile", () => {
     );
   });
 
+  // These shapes carry zero typed usage evidence, so the classifier cannot
+  // separate usage exhaustion from a genuine startup failure: the action's only
+  // inputs are the execution file and the step outcome, and the SDK's thrown
+  // reason survives only as prose no later step in the job can read. Pinned so
+  // nobody "fixes" the ambiguity with a shape-based guess.
+  it("classifies the SDK-threw-before-any-message shape as startup-failure, not out-of-usage", () => {
+    // claude-code-action's SDK catch calls writeExecutionFile(messages) with
+    // whatever accumulated, so a first-request refusal lands a literal "[]" —
+    // a non-empty file carrying zero usage evidence.
+    assert.equal(
+      classifyExecutionFile({ actionOutcome: "failure", fileContent: "[]" }),
+      "startup-failure"
+    );
+  });
+
+  it("classifies an init-only stream as startup-failure through the file-parsing entrypoint too", () => {
+    // Same shape as the classifyMessages assertion above, entered through JSON
+    // parsing, so a change at the file layer cannot silently reclassify it.
+    assert.equal(
+      classifyExecutionFile({
+        actionOutcome: "failure",
+        fileContent: JSON.stringify([initMessage()]),
+      }),
+      "startup-failure"
+    );
+  });
+
+  it("still returns out-of-usage the moment a usage signal exists, even with no result message", () => {
+    // The boundary of the case above: detection was never weakened. Whenever
+    // the provider's refusal reaches the message array, usage wins over the
+    // missing-result path that would otherwise read as startup-failure.
+    assert.equal(
+      classifyExecutionFile({
+        actionOutcome: "failure",
+        fileContent: JSON.stringify([
+          initMessage(),
+          { type: "rate_limit_event", rate_limit_info: { status: "rejected" } },
+        ]),
+      }),
+      "out-of-usage"
+    );
+  });
+
+  it("keeps auth-failed above out-of-usage on a resultless stream — credentials never heal on rerun", () => {
+    assert.equal(
+      classifyExecutionFile({
+        actionOutcome: "failure",
+        fileContent: JSON.stringify([
+          { type: "auth_status", isAuthenticating: true, error: "OAuth token expired" },
+          { type: "rate_limit_event", rate_limit_info: { status: "rejected" } },
+        ]),
+      }),
+      "auth-failed"
+    );
+  });
+
   it("only ever returns classes from the closed vocabulary github-fix keys on", () => {
     const samples = [
       classifyExecutionFile({ actionOutcome: "success", fileContent: null }),
@@ -208,12 +264,43 @@ describe("main", () => {
     assert.equal(main({ argv: [dir], env: { ACTION_OUTCOME: "failure" } }), "unknown");
   });
 
+  it("never escalates an unreadable file on a successful outcome — a green review stays completed", () => {
+    // The escalation guard is `code !== "ENOENT" && actionOutcome !== "success"`.
+    // Only its failure side was covered, so dropping the outcome half would
+    // silently flip a passing review from completed to unknown.
+    assert.equal(main({ argv: [dir], env: { ACTION_OUTCOME: "success" } }), "completed");
+  });
+
   it("treats an empty execution_file output as startup-failure on a failed outcome", () => {
     assert.equal(main({ argv: [""], env: { ACTION_OUTCOME: "failure" } }), "startup-failure");
   });
 
   it("does not evaluate the executable entrypoint when argv is absent", () => {
     assert.equal(isMainModule(undefined), false);
+  });
+});
+
+describe("startup-failure annotation", () => {
+  it("names both causes instead of asserting the reviewer never started", () => {
+    // The class cannot separate a genuine startup failure from usage
+    // exhaustion, so the operator-facing text is the only thing standing
+    // between an ambiguous class and a rerun spent against a usage wall.
+    const actionYml = readFileSync(path.join(HERE, "action.yml"), "utf8");
+    const annotation = actionYml
+      .split("\n")
+      .find((line) => line.includes("::error::") && line.includes("class=startup-failure"));
+
+    assert.ok(annotation, "action.yml must emit a startup-failure ::error:: annotation");
+    assert.ok(/never started/.test(annotation), "annotation must still name the startup cause");
+    assert.ok(/usage exhaustion/.test(annotation), "annotation must name the usage cause");
+    assert.ok(
+      /indistinguishable/.test(annotation),
+      "annotation must say the causes cannot be told apart here"
+    );
+    assert.ok(
+      /cancelled/.test(annotation),
+      "enumeration must stay non-exhaustive — a cancelled step lands here too"
+    );
   });
 });
 
