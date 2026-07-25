@@ -158,12 +158,11 @@ describe("classifyExecutionFile", () => {
     );
   });
 
-  // Usage exhaustion that kills the run before any typed usage signal is
-  // recorded is PROVABLY indistinguishable from a genuine startup failure at
-  // this boundary: the action's only inputs are the execution file and the
-  // step outcome, and the SDK's thrown reason survives only as prose in the
-  // review step's job log, which no later step in the job can read. These
-  // cases pin that indistinguishability so nobody "fixes" it with a guess.
+  // These shapes carry zero typed usage evidence, so the classifier cannot
+  // separate usage exhaustion from a genuine startup failure: the action's only
+  // inputs are the execution file and the step outcome, and the SDK's thrown
+  // reason survives only as prose no later step in the job can read. Pinned so
+  // nobody "fixes" the ambiguity with a shape-based guess.
   it("classifies the SDK-threw-before-any-message shape as startup-failure, not out-of-usage", () => {
     // claude-code-action's SDK catch calls writeExecutionFile(messages) with
     // whatever accumulated, so a first-request refusal lands a literal "[]" —
@@ -174,7 +173,9 @@ describe("classifyExecutionFile", () => {
     );
   });
 
-  it("classifies an init-only stream as startup-failure — usage exhaustion leaves no signal here either", () => {
+  it("classifies an init-only stream as startup-failure through the file-parsing entrypoint too", () => {
+    // Same shape as the classifyMessages assertion above, entered through JSON
+    // parsing, so a change at the file layer cannot silently reclassify it.
     assert.equal(
       classifyExecutionFile({
         actionOutcome: "failure",
@@ -263,6 +264,13 @@ describe("main", () => {
     assert.equal(main({ argv: [dir], env: { ACTION_OUTCOME: "failure" } }), "unknown");
   });
 
+  it("never escalates an unreadable file on a successful outcome — a green review stays completed", () => {
+    // The escalation guard is `code !== "ENOENT" && actionOutcome !== "success"`.
+    // Only its failure side was covered, so dropping the outcome half would
+    // silently flip a passing review from completed to unknown.
+    assert.equal(main({ argv: [dir], env: { ACTION_OUTCOME: "success" } }), "completed");
+  });
+
   it("treats an empty execution_file output as startup-failure on a failed outcome", () => {
     assert.equal(main({ argv: [""], env: { ACTION_OUTCOME: "failure" } }), "startup-failure");
   });
@@ -287,11 +295,11 @@ describe("startup-failure annotation", () => {
     assert.ok(/usage exhaustion/.test(annotation), "annotation must name the usage cause");
     assert.ok(
       /indistinguishable/.test(annotation),
-      "annotation must say the two causes cannot be told apart here"
+      "annotation must say the causes cannot be told apart here"
     );
     assert.ok(
-      !/;\s*the reviewer never started\./.test(annotation),
-      "annotation must not assert the startup cause as the only one"
+      /cancelled/.test(annotation),
+      "enumeration must stay non-exhaustive — a cancelled step lands here too"
     );
   });
 });
