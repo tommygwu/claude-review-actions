@@ -158,6 +158,61 @@ describe("classifyExecutionFile", () => {
     );
   });
 
+  // Usage exhaustion that kills the run before any typed usage signal is
+  // recorded is PROVABLY indistinguishable from a genuine startup failure at
+  // this boundary: the action's only inputs are the execution file and the
+  // step outcome, and the SDK's thrown reason survives only as prose in the
+  // review step's job log, which no later step in the job can read. These
+  // cases pin that indistinguishability so nobody "fixes" it with a guess.
+  it("classifies the SDK-threw-before-any-message shape as startup-failure, not out-of-usage", () => {
+    // claude-code-action's SDK catch calls writeExecutionFile(messages) with
+    // whatever accumulated, so a first-request refusal lands a literal "[]" —
+    // a non-empty file carrying zero usage evidence.
+    assert.equal(
+      classifyExecutionFile({ actionOutcome: "failure", fileContent: "[]" }),
+      "startup-failure"
+    );
+  });
+
+  it("classifies an init-only stream as startup-failure — usage exhaustion leaves no signal here either", () => {
+    assert.equal(
+      classifyExecutionFile({
+        actionOutcome: "failure",
+        fileContent: JSON.stringify([initMessage()]),
+      }),
+      "startup-failure"
+    );
+  });
+
+  it("still returns out-of-usage the moment a usage signal exists, even with no result message", () => {
+    // The boundary of the case above: detection was never weakened. Whenever
+    // the provider's refusal reaches the message array, usage wins over the
+    // missing-result path that would otherwise read as startup-failure.
+    assert.equal(
+      classifyExecutionFile({
+        actionOutcome: "failure",
+        fileContent: JSON.stringify([
+          initMessage(),
+          { type: "rate_limit_event", rate_limit_info: { status: "rejected" } },
+        ]),
+      }),
+      "out-of-usage"
+    );
+  });
+
+  it("keeps auth-failed above out-of-usage on a resultless stream — credentials never heal on rerun", () => {
+    assert.equal(
+      classifyExecutionFile({
+        actionOutcome: "failure",
+        fileContent: JSON.stringify([
+          { type: "auth_status", isAuthenticating: true, error: "OAuth token expired" },
+          { type: "rate_limit_event", rate_limit_info: { status: "rejected" } },
+        ]),
+      }),
+      "auth-failed"
+    );
+  });
+
   it("only ever returns classes from the closed vocabulary github-fix keys on", () => {
     const samples = [
       classifyExecutionFile({ actionOutcome: "success", fileContent: null }),
@@ -214,6 +269,30 @@ describe("main", () => {
 
   it("does not evaluate the executable entrypoint when argv is absent", () => {
     assert.equal(isMainModule(undefined), false);
+  });
+});
+
+describe("startup-failure annotation", () => {
+  it("names both causes instead of asserting the reviewer never started", () => {
+    // The class cannot separate a genuine startup failure from usage
+    // exhaustion, so the operator-facing text is the only thing standing
+    // between an ambiguous class and a rerun spent against a usage wall.
+    const actionYml = readFileSync(path.join(HERE, "action.yml"), "utf8");
+    const annotation = actionYml
+      .split("\n")
+      .find((line) => line.includes("::error::") && line.includes("class=startup-failure"));
+
+    assert.ok(annotation, "action.yml must emit a startup-failure ::error:: annotation");
+    assert.ok(/never started/.test(annotation), "annotation must still name the startup cause");
+    assert.ok(/usage exhaustion/.test(annotation), "annotation must name the usage cause");
+    assert.ok(
+      /indistinguishable/.test(annotation),
+      "annotation must say the two causes cannot be told apart here"
+    );
+    assert.ok(
+      !/;\s*the reviewer never started\./.test(annotation),
+      "annotation must not assert the startup cause as the only one"
+    );
   });
 });
 

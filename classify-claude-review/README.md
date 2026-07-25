@@ -55,7 +55,9 @@ which this repo's own tests assert the classifier against:
   credential; reruns cannot fix a broken one.
 - `reviewer-errored` — the reviewer ran (real turns and cost recorded) but
   errored before finishing. **Transient:** a rerun should succeed.
-- `startup-failure` — no execution output; the reviewer never started.
+- `startup-failure` — no classifiable execution output. **Two causes, not one:**
+  the reviewer never started, *or* usage exhaustion killed it before it recorded
+  a usage signal. See [Why `startup-failure` is ambiguous](#why-startup-failure-is-ambiguous).
 - `unknown` — no classifiable evidence (e.g. an unparseable execution file).
 - `never-posted` — **workflow-derived, not emitted by this action.** The
   caller's verify/fallback steps emit it when a `completed` run left no valid
@@ -64,6 +66,28 @@ which this repo's own tests assert the classifier against:
 Classification reads typed fields from the SDK message array — never prose, and
 never a model call. `auth-failed` outranks `out-of-usage` because a broken
 credential is deterministic across reruns.
+
+### Why `startup-failure` is ambiguous
+
+`out-of-usage` is derived from typed evidence *inside* the execution file. When
+usage exhaustion kills the run before that evidence is recorded, the class
+degrades to `startup-failure`, and no amount of logic here can recover it:
+
+- This action's only inputs are `execution_file` and `action_outcome`. On this
+  path `action_outcome` is `failure` for both causes.
+- `claude-code-action` writes the execution file from its SDK catch handler with
+  whatever messages accumulated, so a first-request refusal produces a literal
+  `[]` — or, once the CLI has emitted `system/init`, a stream with no `result`.
+  Both are the same shape a non-usage startup error produces.
+- The provider's actual refusal reason survives only as prose in the *review*
+  step's job log (`SDK execution error: …`). A step's log text is not an action
+  output and is not readable by a later step in the same job.
+
+So the honest handling is to say so: the `startup-failure` annotation names both
+causes and points the operator at the review step's log, rather than asserting a
+startup problem that may not exist. Downstream, `startup-failure` stays
+rerun-eligible — correct for the startup cause, and bounded by the caller's
+attempt cap for the usage cause.
 
 For every non-`completed` class the action prints a per-class `::error::`
 annotation and **exits non-zero**, so the check fails and the marker lands in

@@ -66,7 +66,7 @@ runs:
           reviewer-errored)
             echo "::error::claude-review ran (real turns and cost recorded) but ended in an error before finishing (class=reviewer-errored). Likely transient — a rerun should succeed." ;;
           startup-failure)
-            echo "::error::claude-review produced no execution output (class=startup-failure); the reviewer never started." ;;
+            echo "::error::claude-review produced no classifiable execution output (class=startup-failure). Two causes are indistinguishable from here: the reviewer never started, or usage exhaustion killed it before it recorded a usage signal. Read the review step's own log before spending a rerun — a provider rate-limit error there means usage, and a rerun hits the same wall until usage resets." ;;
           *)
             echo "::error::claude-review failed with no classifiable evidence (class=unknown)." ;;
         esac

@@ -25,6 +25,16 @@ export const FAILURE_CLASSES = Object.freeze([
 // exhaustion can also surface as a rate_limit_event with status "rejected".
 const USAGE_ASSISTANT_ERRORS = Object.freeze(["rate_limit", "billing_error"]);
 
+// startup-failure is a two-cause class, not proof the reviewer never started.
+// When the Agent SDK's query() iterator throws before yielding a usage-bearing
+// message, claude-code-action's catch writes whatever accumulated — often "[]"
+// or just the system/init message — and the thrown reason survives only as
+// prose in the review step's own job log. That log is not an action output and
+// is not reachable from a later step in the same job, so usage exhaustion and a
+// genuine startup failure are indistinguishable from this action's two inputs.
+// Do not add a heuristic here: no typed usage evidence exists on this path.
+// The step annotation names both causes instead of asserting one.
+
 function isRecord(value) {
   return typeof value === "object" && value !== null;
 }
@@ -135,9 +145,10 @@ export function main({ argv, env }) {
     try {
       fileContent = readFileSync(executionFilePath, "utf8");
     } catch (error) {
-      // Absence means the reviewer never wrote output (startup-failure). Any
-      // other read failure (EACCES, EISDIR, file too large) means output may
-      // exist — do not assert "never started"; escalate loudly instead.
+      // Absence means no execution output was written (startup-failure; see the
+      // two-cause note above). Any other read failure (EACCES, EISDIR, file too
+      // large) means output may exist — that is not a startup shape at all, so
+      // escalate loudly instead.
       const { code, message } = getErrorDetails(error);
       if (code !== "ENOENT" && actionOutcome !== "success") {
         process.stderr.write(`execution file unreadable (${code}): ${message}\n`);
