@@ -17,5 +17,5 @@ the merge commit: `git tag -f v1 origin/main && git push -f origin v1`.
 ## Verifying
 
 ```bash
-node --test 'classify-claude-review/*.test.mjs'
+node --test 'classify-claude-review/*.test.mjs' 'review/*.test.mjs'
 ```

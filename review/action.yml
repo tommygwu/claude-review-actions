@@ -23,6 +23,14 @@ outputs:
       Path to the claude-code-action execution file, for
       classify-claude-review.
     value: ${{ steps.review.outputs.execution_file }}
+  skip_reason:
+    description: >-
+      Set only when claude-code-action returned success without running the
+      reviewer. `workflow-modified`: the PR changes the review workflow, so
+      the upstream workflow validation skipped the run. `not-executed`: no
+      known cause. Either way this action fails and writes a marker that
+      classify-claude-review reads. Empty on every normal run.
+    value: ${{ steps.skip-check.outputs.skip_reason }}
 
 runs:
   using: composite
@@ -41,3 +49,18 @@ runs:
           --model claude-opus-5-5
           --allowed-tools "${{ inputs.allowed_tools }}"
           --disallowed-tools "Agent,Task"
+
+    # Runs only when the reviewer never ran: a normal run always sets
+    # `conclusion`, and a failed review skips it via success().
+    - id: skip-check
+      if: success() && steps.review.outputs.conclusion == '' && steps.review.outputs.execution_file == ''
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        GITHUB_TOKEN_FOR_CHECK: ${{ github.token }}
+        REPOSITORY: ${{ github.repository }}
+        WORKFLOW_REF: ${{ github.workflow_ref }}
+        WORKFLOW_SHA: ${{ github.workflow_sha || github.sha }}
+        DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        PROMPT_PRESENT: ${{ inputs.prompt != '' }}
+      run: node "$ACTION_PATH/detect-workflow-validation-skip.mjs"

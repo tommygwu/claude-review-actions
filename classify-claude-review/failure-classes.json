@@ -4,9 +4,20 @@
     "completed",
     "out-of-usage",
     "auth-failed",
+    "workflow-modified",
     "reviewer-errored",
     "never-posted",
     "startup-failure",
     "unknown"
-  ]
+  ],
+  "descriptions": {
+    "completed": "The reviewer finished. Comment verification follows.",
+    "out-of-usage": "The provider rejected the run for usage limits. Terminal: a rerun hits the same wall until usage resets.",
+    "auth-failed": "Provider authentication failed. Terminal: repair the credential; reruns cannot fix it.",
+    "workflow-modified": "claude-code-action skipped the review by design because this PR modifies the review workflow. Terminal: reruns cannot fix it. The review runs on the next PR after merge; a maintainer reviews the workflow change by hand.",
+    "reviewer-errored": "The reviewer ran (real turns and cost recorded) but errored before finishing. Transient: a rerun should succeed.",
+    "never-posted": "Workflow-derived, never emitted by the classifier: a completed run left no valid review comment.",
+    "startup-failure": "No classifiable execution output. Not proof the reviewer never started: usage exhaustion, a cancelled step, or a failed execution-file write look the same.",
+    "unknown": "No classifiable evidence, for example an unparseable execution file."
+  }
 }

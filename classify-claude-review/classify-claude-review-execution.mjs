@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { readFileSync } from "node:fs";
+import path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 
@@ -12,6 +13,10 @@ export const FAILURE_CLASSES = Object.freeze([
   "completed",
   "out-of-usage",
   "auth-failed",
+  // Marker-derived only: the review action writes a skip marker when
+  // claude-code-action skipped the run because the PR modifies the review
+  // workflow. classifyMessages never returns it.
+  "workflow-modified",
   "reviewer-errored",
   // Workflow-derived only: the verify/fallback steps emit never-posted when a
   // completed run left no valid comment. classifyMessages never returns it.
@@ -24,6 +29,10 @@ export const FAILURE_CLASSES = Object.freeze([
 // The review workflow authenticates with a subscription OAuth token, so usage
 // exhaustion can also surface as a rate_limit_event with status "rejected".
 const USAGE_ASSISTANT_ERRORS = Object.freeze(["rate_limit", "billing_error"]);
+
+// Written to $RUNNER_TEMP by review/detect-workflow-validation-skip.mjs, which
+// owns the same constant; a parity test keeps the two in step.
+export const SKIP_MARKER_FILENAME = "claude-review-skip.json";
 
 function isRecord(value) {
   return typeof value === "object" && value !== null;
@@ -124,12 +133,14 @@ export function classifyMessages(messages) {
   return "unknown";
 }
 
-export function classifyExecutionFile({ actionOutcome, fileContent }) {
+export function classifyExecutionFile({ actionOutcome, fileContent, skipMarker = null }) {
   if (actionOutcome === "success") {
     return "completed";
   }
   if (typeof fileContent !== "string" || fileContent.trim() === "") {
-    return "startup-failure";
+    // The marker only speaks when no execution output exists, so a stale
+    // marker can never override a real run's evidence.
+    return skipMarker?.reason === "workflow-modified" ? "workflow-modified" : "startup-failure";
   }
 
   let messages;
@@ -144,6 +155,31 @@ export function classifyExecutionFile({ actionOutcome, fileContent }) {
     return "unknown";
   }
   return classifyMessages(messages);
+}
+
+/** @internal Exported for testing the marker path. */
+export function readSkipMarker(runnerTemp) {
+  if (typeof runnerTemp !== "string" || runnerTemp === "") {
+    return null;
+  }
+  const markerPath = path.join(runnerTemp, SKIP_MARKER_FILENAME);
+  let content;
+  try {
+    content = readFileSync(markerPath, "utf8");
+  } catch (error) {
+    const { code, message } = getErrorDetails(error);
+    if (code !== "ENOENT") {
+      process.stderr.write(`skip marker unreadable (${code}): ${message}\n`);
+    }
+    return null;
+  }
+  try {
+    const marker = JSON.parse(content);
+    return isRecord(marker) ? marker : null;
+  } catch (error) {
+    process.stderr.write(`skip marker unparseable: ${getErrorDetails(error).message}\n`);
+    return null;
+  }
 }
 
 export function main({ argv, env }) {
@@ -169,7 +205,11 @@ export function main({ argv, env }) {
     }
   }
 
-  return classifyExecutionFile({ actionOutcome, fileContent });
+  return classifyExecutionFile({
+    actionOutcome,
+    fileContent,
+    skipMarker: readSkipMarker(env.RUNNER_TEMP),
+  });
 }
 
 if (isMainModule(process.argv[1])) {

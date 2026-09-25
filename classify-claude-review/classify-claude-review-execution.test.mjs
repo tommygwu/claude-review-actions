@@ -12,7 +12,13 @@ import {
   getErrorDetails,
   isMainModule,
   main,
+  readSkipMarker,
+  SKIP_MARKER_FILENAME,
 } from "./classify-claude-review-execution.mjs";
+import {
+  main as detectSkip,
+  SKIP_MARKER_FILENAME as REVIEW_SKIP_MARKER_FILENAME,
+} from "../review/detect-workflow-validation-skip.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -214,6 +220,39 @@ describe("classifyExecutionFile", () => {
     );
   });
 
+  it("returns workflow-modified when the skip marker says so and no execution file exists", () => {
+    assert.equal(
+      classifyExecutionFile({
+        actionOutcome: "failure",
+        fileContent: null,
+        skipMarker: { reason: "workflow-modified" },
+      }),
+      "workflow-modified"
+    );
+  });
+
+  it("ignores a skip marker when an execution file exists — a stale marker never overrides real evidence", () => {
+    assert.equal(
+      classifyExecutionFile({
+        actionOutcome: "failure",
+        fileContent: JSON.stringify([initMessage(), resultMessage({ num_turns: 4, total_cost_usd: 0.2 })]),
+        skipMarker: { reason: "workflow-modified" },
+      }),
+      "reviewer-errored"
+    );
+  });
+
+  it("keeps startup-failure for a not-executed marker — an unexplained no-op is not the terminal skip", () => {
+    assert.equal(
+      classifyExecutionFile({
+        actionOutcome: "failure",
+        fileContent: null,
+        skipMarker: { reason: "not-executed" },
+      }),
+      "startup-failure"
+    );
+  });
+
   it("only ever returns classes from the closed vocabulary github-fix keys on", () => {
     const samples = [
       classifyExecutionFile({ actionOutcome: "success", fileContent: null }),
@@ -275,6 +314,54 @@ describe("main", () => {
     assert.equal(main({ argv: [""], env: { ACTION_OUTCOME: "failure" } }), "startup-failure");
   });
 
+  it("reads the skip marker from RUNNER_TEMP when the review produced no execution file", () => {
+    writeFileSync(path.join(dir, SKIP_MARKER_FILENAME), JSON.stringify({ reason: "workflow-modified" }));
+    assert.equal(
+      main({ argv: [""], env: { ACTION_OUTCOME: "failure", RUNNER_TEMP: dir } }),
+      "workflow-modified"
+    );
+  });
+
+  it("falls back to startup-failure on an unparseable skip marker", () => {
+    writeFileSync(path.join(dir, SKIP_MARKER_FILENAME), "not json {");
+    assert.equal(readSkipMarker(dir), null);
+    assert.equal(
+      main({ argv: [""], env: { ACTION_OUTCOME: "failure", RUNNER_TEMP: dir } }),
+      "startup-failure"
+    );
+  });
+
+  it("classifies the marker the review action writes on a workflow-validation skip as workflow-modified", async () => {
+    // End to end across the two actions: review-ui run 36105360372 skipped with
+    // no execution file, and classify must name the cause instead of guessing.
+    const outputFile = path.join(dir, "github-output");
+    writeFileSync(outputFile, "");
+    const { reason } = await detectSkip({
+      env: {
+        RUNNER_TEMP: dir,
+        GITHUB_OUTPUT: outputFile,
+        REPOSITORY: "o/r",
+        WORKFLOW_REF: "o/r/.github/workflows/claude-code-review.yml@refs/pull/77/merge",
+        WORKFLOW_SHA: "merge-sha",
+        DEFAULT_BRANCH: "main",
+        PROMPT_PRESENT: "true",
+      },
+      readLocalBlob: () => "blob-on-pr",
+      fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ sha: "blob-on-main" }) }),
+    });
+
+    assert.equal(reason, "workflow-modified");
+    assert.equal(readFileSync(outputFile, "utf8"), "skip_reason=workflow-modified\n");
+    assert.equal(
+      main({ argv: [""], env: { ACTION_OUTCOME: "failure", RUNNER_TEMP: dir } }),
+      "workflow-modified"
+    );
+  });
+
+  it("shares one marker filename with the review action", () => {
+    assert.equal(SKIP_MARKER_FILENAME, REVIEW_SKIP_MARKER_FILENAME);
+  });
+
   it("does not evaluate the executable entrypoint when argv is absent", () => {
     assert.equal(isMainModule(undefined), false);
   });
@@ -304,6 +391,19 @@ describe("startup-failure annotation", () => {
   });
 });
 
+describe("class annotations", () => {
+  it("gives every classifier-emitted failure class its own case arm, so none falls through to the unknown text", () => {
+    const actionYml = readFileSync(path.join(HERE, "action.yml"), "utf8");
+    const workflowDerived = new Set(["completed", "never-posted", "unknown"]);
+    for (const failureClass of FAILURE_CLASSES.filter((value) => !workflowDerived.has(value))) {
+      assert.ok(
+        actionYml.includes(`          ${failureClass})\n`),
+        `action.yml is missing a case arm for ${failureClass}`
+      );
+    }
+  });
+});
+
 describe("failure-classes.json", () => {
   it("stays in lockstep with the classifier's FAILURE_CLASSES vocabulary", () => {
     // The checked-in artifact is the single source of truth consumers read;
@@ -311,5 +411,10 @@ describe("failure-classes.json", () => {
     // to one is never missing from the other.
     const artifact = JSON.parse(readFileSync(path.join(HERE, "failure-classes.json"), "utf8"));
     assert.deepEqual(artifact.classes, [...FAILURE_CLASSES]);
+  });
+
+  it("describes every class and nothing else", () => {
+    const artifact = JSON.parse(readFileSync(path.join(HERE, "failure-classes.json"), "utf8"));
+    assert.deepEqual(Object.keys(artifact.descriptions).sort(), [...FAILURE_CLASSES].sort());
   });
 });
