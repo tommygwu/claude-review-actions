@@ -26,6 +26,12 @@ jobs:
           action_outcome: ${{ steps.claude-review.outcome }}
 ```
 
+Keep `if: ${{ !cancelled() }}`. Do not add a condition on the review outcome.
+The action returns `completed` for a successful review, so `class` is always set
+when the step runs, and an empty `class` then really means broken wiring. A
+condition such as `steps.claude-review.outcome != 'success'` also skips classify
+when `claude-code-action` exits green without running, which hides the cause.
+
 `v1` moves as compatible changes ship. Pin a full commit SHA instead if you
 want changes to reach your repo only when you deliberately bump.
 
@@ -53,6 +59,11 @@ which this repo's own tests assert the classifier against:
   a rerun hits the same wall until usage resets.
 - `auth-failed` — provider authentication failed. **Terminal:** repair the
   credential; reruns cannot fix a broken one.
+- `workflow-modified` — `claude-code-action` skipped the review by design
+  because this PR modifies the review workflow. **Terminal:** reruns cannot fix
+  it. The review runs on the next PR after this one merges; a maintainer
+  reviews the workflow change by hand. Derived from the skip marker, not from
+  the execution file. See [Skip marker](#skip-marker).
 - `reviewer-errored` — the reviewer ran (real turns and cost recorded) but
   errored before finishing. **Transient:** a rerun should succeed.
 - `startup-failure` — no execution output at all. **Not proof the reviewer never
@@ -99,6 +110,23 @@ after a usage reset key on the `out-of-usage` verdict, so this run falls outside
 that sweep and stays red with no automated path back. Closing that gap is a
 consumer-side change, not a producer one; it is tracked separately.
 
+### Skip marker
+
+When the PR modifies the review workflow, `claude-code-action` fails its
+workflow validation, skips the review, and exits success with no execution
+file. The [`review`](../review) action detects that skip, fails its step, and
+writes `$RUNNER_TEMP/claude-review-skip.json` with `"reason": "workflow-modified"`.
+
+This action reads the marker from `$RUNNER_TEMP` by itself, so the inputs do not
+change. It returns `workflow-modified` only when the marker says so **and** the
+execution file is missing or empty. A real execution file always wins, so a
+stale marker cannot override a run's evidence. `$RUNNER_TEMP` is emptied for
+each job. A marker with `"reason": "not-executed"` (the action did nothing, but
+the workflow file matches the default branch) keeps the `startup-failure` class.
+
+Consumers that call `claude-code-action` directly, not through `review`, get no
+marker; the skip then reads as a green review step with nothing posted.
+
 For every non-`completed` class the action prints a per-class `::error::`
 annotation and **exits non-zero**, so the check fails and the marker lands in
 `gh run view --log-failed`.
@@ -120,6 +148,19 @@ Rename either and the marker still prints, but the consumer regex stops
 matching — a silent failure. Pin both in a test if you depend on them.
 
 ## Consuming the class downstream
+
+### Rerun policy for github-fix consumers
+
+| Class | Rerun? |
+|---|---|
+| `out-of-usage` | No. Terminal until usage resets. |
+| `auth-failed` | No. Terminal until the credential is repaired. |
+| `workflow-modified` | No. Terminal for this PR head. The review runs on the next PR after merge; a maintainer reviews the workflow change by hand. |
+| `reviewer-errored` | Yes. Likely transient. |
+
+Treat `workflow-modified` like `out-of-usage` and `auth-failed`: open the retry
+circuit instead of re-kicking. A consumer that does not know the class yet
+falls back to its default handling, which may spend a useless rerun.
 
 `steps.classify.outputs.class` is available to later steps. A common pattern is
 a `Verify a review comment was posted` step that folds `completed` →

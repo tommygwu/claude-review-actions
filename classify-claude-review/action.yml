@@ -3,8 +3,9 @@ description: >-
   Derive one closed-vocabulary failure class from the claude-code-action
   execution file so a red review check says WHY it is red. github-fix keys its
   rerun-vs-circuit-open decision on the CLAUDE_REVIEW_FAILURE_CLASS marker this
-  action emits: out-of-usage and auth-failed are terminal (a rerun hits the same
-  wall), reviewer-errored is transient (one re-kick is worth it). This action
+  action emits: out-of-usage, auth-failed, and workflow-modified are terminal
+  (a rerun hits the same wall), reviewer-errored is transient (one re-kick is
+  worth it). This action
   fails on any non-completed class so the marker lands in `gh run view
   --log-failed`. The shared class vocabulary lives in failure-classes.json.
 
@@ -63,6 +64,8 @@ runs:
             echo "::error::claude-review failed because the Claude provider rejected the run for usage limits (class=out-of-usage). This is NOT a reviewer defect — a rerun will hit the same limit until usage resets." ;;
           auth-failed)
             echo "::error::claude-review failed provider authentication (class=auth-failed). Repair the CLAUDE_CODE_OAUTH_TOKEN secret; reruns cannot fix a broken credential." ;;
+          workflow-modified)
+            echo "::error::claude-review was skipped by design because this PR modifies the review workflow (class=workflow-modified). Reruns cannot fix this. The review runs on the next PR after this one merges; a maintainer must review the workflow change by hand." ;;
           reviewer-errored)
             echo "::error::claude-review ran (real turns and cost recorded) but ended in an error before finishing (class=reviewer-errored). Likely transient — a rerun should succeed." ;;
           startup-failure)

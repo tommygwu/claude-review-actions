@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
-      # The classifier is dependency-free and runs on the runner's bundled
-      # Node, so there is nothing to install.
-      - name: Run classifier parity suite
-        run: node --test 'classify-claude-review/*.test.mjs'
+      # The classifier and the skip detector are dependency-free and run on the
+      # runner's bundled Node, so there is nothing to install.
+      - name: Run classifier parity and skip-detection suites
+        run: node --test 'classify-claude-review/*.test.mjs' 'review/*.test.mjs'
