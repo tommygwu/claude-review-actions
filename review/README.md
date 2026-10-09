@@ -52,10 +52,13 @@ URL user credentials and all URL query/fragment values in title, body, and diff
 are replaced with markers before the model runs. This includes deletion lines
 for historical credential URLs. The same redaction runs before posting review
 text. Only token-free path context remains; hidden query values cannot be
-reviewed by the model. After plain URL redaction, remaining Unicode/hex source
-escapes, percent encodings, or HTML entities fail for human review without
-logging source values. This also refuses benign encoded fixtures; source is
-never recursively decoded to guess whether it hides a credential URL.
+reviewed by the model. A bounded shadow decodes common source escapes, percent
+encodings, and URL entities only to find URLs and map them back to their original
+source spans. Encoded credential URLs are replaced as a whole with token-free
+path context. Benign encoded source and URLs remain unchanged and reviewable.
+Unresolved URL/authentication spans or more than eight encoding layers require
+human review without logging source values. No source is executed; this is a URL
+redactor, not a general detector of arbitrary secrets in source code.
 
 The CLI is pinned to 2.1.295 with platform archive SHA-512 integrity. It runs in
 a new empty HOME and working directory outside the checkout, with a fixed

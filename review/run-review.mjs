@@ -34,21 +34,86 @@ export function cliOptions(home, oauthToken) {
   };
 }
 
-function redactText(text) {
-  const redacted = text.replace(/https?[^\s<>"'`]+/gi, value => {
-    if (!/^https?:\/\//i.test(value)) {
-      if (/^https?[:%\\&]/i.test(value)) throw new ReviewError("reviewer-errored", "URL text cannot be redacted safely; use a human review");
-      return value;
-    }
-    const url = value.replace(/^(https?:\/\/)[^/?#]*@/i, "$1[REDACTED_CREDENTIAL]@");
-    const query = url.search(/[?#]/);
-    if (/[%\\&]/.test(query === -1 ? url : url.slice(0, query))) throw new ReviewError("reviewer-errored", "URL text cannot be redacted safely; use a human review");
-    return query === -1 ? url : `${url.slice(0, query)}?[REDACTED_QUERY]`;
-  });
-  if (/(?:\\(?:u(?:[a-f0-9]{4}|\{[a-f0-9]+\})|x[a-f0-9]{2})|%[a-f0-9]{2}|&(?:#[0-9]+;?|#x[a-f0-9]+;?|[a-z][a-z0-9]+;))/i.test(redacted)) {
-    throw new ReviewError("reviewer-errored", "Encoded source cannot be checked safely for credential URLs; use a human review");
+const SHADOW_ENCODING = /\\[uU][a-f0-9]{8}|\\u\{[a-f0-9]{1,6}\}|\\u[a-f0-9]{4}|\\x[a-f0-9]{2}|\\[\\/tnr]|(?:%[a-f0-9]{2})+|&#x[a-f0-9]{1,6};?|&#[0-9]{1,7};?|&[a-z][a-z0-9]+;|[\t\r\n]/gi;
+const ENTITIES = Object.freeze({ amp: "&", quot: '"', apos: "'", lt: "<", gt: ">", colon: ":", sol: "/", quest: "?", equals: "=", commat: "@", percnt: "%", num: "#", semi: ";", tab: "", newline: "", nbsp: " " });
+
+function decodeShadowAtom(value) {
+  if (/^[\t\r\n]$/.test(value)) return "";
+  if (value.startsWith("%")) { try { return decodeURIComponent(value); } catch { return value; } }
+  if (/^&#/i.test(value)) {
+    const hex = /^&#x/i.test(value), point = parseInt(value.slice(hex ? 3 : 2), hex ? 16 : 10);
+    return point <= 0x10ffff ? String.fromCodePoint(point) : value;
   }
-  return redacted;
+  if (value.startsWith("&")) return ENTITIES[value.slice(1, -1).toLowerCase()] ?? value;
+  const short = { "\\\\": "\\", "\\/": "/", "\\t": "", "\\r": "", "\\n": "" };
+  if (value in short) return short[value];
+  const point = parseInt(value.replace(/^\\[uUxX]\{?/, "").replace(/\}$/, ""), 16);
+  return point <= 0x10ffff ? String.fromCodePoint(point) : value;
+}
+
+function shadowStep(shadow) {
+  const starts = new Uint32Array(shadow.text.length), ends = new Uint32Array(shadow.text.length), chunks = [];
+  let previous = 0, length = 0, changed = false;
+  const copy = end => { chunks.push(shadow.text.slice(previous, end)); for (; previous < end; previous++) { starts[length] = shadow.starts[previous]; ends[length++] = shadow.ends[previous]; } };
+  for (const match of shadow.text.matchAll(SHADOW_ENCODING)) {
+    copy(match.index);
+    const decoded = decodeShadowAtom(match[0]);
+    changed ||= decoded !== match[0];
+    chunks.push(decoded);
+    for (let i = 0; i < decoded.length; i++) { starts[length] = shadow.starts[match.index]; ends[length++] = shadow.ends[match.index + match[0].length - 1]; }
+    previous = match.index + match[0].length;
+  }
+  copy(shadow.text.length);
+  return { text: chunks.join(""), starts: starts.subarray(0, length), ends: ends.subarray(0, length), changed };
+}
+
+function sourceShadow(text) {
+  let shadow = { text, starts: Uint32Array.from({ length: text.length }, (_, i) => i), ends: Uint32Array.from({ length: text.length }, (_, i) => i + 1) };
+  for (let round = 0; round < 8; round++) {
+    const next = shadowStep(shadow);
+    shadow = next;
+    if (!next.changed) return shadow;
+  }
+  if (shadowStep(shadow).changed) throw new ReviewError("reviewer-errored", "URL encoding exceeds the inspection bound; use a human review");
+  return shadow;
+}
+
+function precedingSlashes(text, index) { let count = 0; while (index > 0 && text[--index] === "\\") count++; return count; }
+
+function sourceURLend(text, start) {
+  const quote = ['"', "'", "`"].includes(text[start - 1]) ? text[start - 1] : null;
+  const quoteDepth = quote ? precedingSlashes(text, start - 1) : 0;
+  for (let i = start; i < text.length; i++) {
+    if (quote ? text[i] === quote && precedingSlashes(text, i) === quoteDepth : /[\s<>"'`]/.test(text[i]) && precedingSlashes(text, i) % 2 === 0) return i;
+  }
+  if (quote) throw new ReviewError("reviewer-errored", "URL source span is ambiguous; use a human review");
+  return text.length;
+}
+
+function redactText(text) {
+  const shadow = sourceShadow(text), replacements = [];
+  let consumed = 0;
+  for (const match of shadow.text.matchAll(/https?:\/\//gi)) {
+    const start = shadow.starts[match.index];
+    if (start < consumed) continue;
+    const end = sourceURLend(text, start);
+    let shadowEnd = match.index;
+    while (shadowEnd < shadow.text.length && shadow.starts[shadowEnd] < end) shadowEnd++;
+    const candidate = shadow.text.slice(match.index, shadowEnd);
+    let url;
+    try { url = new URL(candidate); }
+    catch {
+      if (/[?@#]/.test(candidate)) throw new ReviewError("reviewer-errored", "URL authentication span is ambiguous; use a human review");
+      continue;
+    }
+    consumed = end;
+    if (!url.username && !url.password && !url.search && !url.hash) continue;
+    const original = text.slice(start, end), visible = `${url.origin}${url.pathname}`;
+    const replacement = original === candidate ? `${visible}?[REDACTED_QUERY]` : `[REDACTED_URL ${visible}]`;
+    replacements.push({ start, end, replacement });
+  }
+  for (const { start, end, replacement } of replacements.reverse()) text = text.slice(0, start) + replacement + text.slice(end);
+  return text;
 }
 
 function redactReviewData(data) {

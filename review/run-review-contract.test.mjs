@@ -252,43 +252,93 @@ for (const [label, first] of [
   ["semicolonless HTML decimal", "&#104"], ["semicolonless HTML hex", "&#x68"],
 ]) encodedSchemes.push([`${label} encoded first scheme character`, `${first}ttps`]);
 const encodedSecret = `GENERATED_ONLY_SECRET_${randomUUID()}`;
-const ambiguousURLs = [
+const credentialURLs = [
   ...encodedSchemes.map(([label, scheme]) => [label, `${scheme}://example.invalid/runbook?token=${encodedSecret}`]),
   ["source-escaped query delimiter", `https://example.invalid/runbook\\u003ftoken=${encodedSecret}`],
   ["multiply percent encoded query", `https://example.invalid/runbook%25253Ftoken%25253D${encodedSecret}`],
+  ["encoded whitespace inside query", `https://example.invalid/runbook?token=prefix\\u0020${encodedSecret}`],
+  ["encoded quote inside query", `https://example.invalid/runbook?token=prefix\\u0022${encodedSecret}`],
+  ["fully percent encoded URL", [...`https://example.invalid/runbook?token=${encodedSecret}`].map(sourceEncoders[3][1]).join("")],
+  ["double escaped scheme", `\\\\u0068ttps:\\/\\/example.invalid/runbook?token=${encodedSecret}`],
+  ["encoded multiple-at userinfo", `https&colon;&sol;&sol;user&colon;${encodedSecret}&commat;other&commat;example.invalid/runbook`],
 ];
 
-for (const [label, url] of ambiguousURLs) {
-  test(`CLI rejects ${label} before spawning a provider process`, async () => {
-    for (const field of ["title", "body", "diff"]) {
+const assertEncodedCredentialRemoved = (text, url, label) => {
+  for (const value of [encodedSecret, [...encodedSecret].map(sourceEncoders[3][1]).join("")]) assert.ok(!text.includes(value), label);
+  assert.ok(!text.includes(url), label);
+  assert.ok(text.includes("https://example.invalid/runbook"), label);
+};
+
+test("CLI stdin removes encoded credential URL spans while keeping path context", async () => {
+  for (const [label, url] of credentialURLs) {
       await withRoot(async root => {
-        let spawned = false;
-        await assert.rejects(runModel({ executable: env.CLAUDE_EXECUTABLE, data: { ...data, [field]: url }, oauthToken: "fake-oauth", root,
-          spawnImpl: () => { spawned = true; throw new Error("Provider must not start"); },
-        }), error => isClass("reviewer-errored")(error) && !error.message.includes("GENERATED_ONLY_SECRET"));
-        assert.equal(spawned, false, field);
+        let stdin = "";
+        const result = await runModel({ executable: env.CLAUDE_EXECUTABLE, data: { ...data, title: url }, oauthToken: "fake-oauth", root,
+          spawnImpl: (...args) => {
+            const child = childProcess([init, success])(...args);
+            child.stdin.on("data", chunk => { stdin += chunk; });
+            return child;
+          },
+        });
+        assert.equal(result, success.result, label);
+        assertEncodedCredentialRemoved(JSON.parse(stdin).title, url, label);
       });
-    }
-  });
+  }
+});
 
-  test(`producer rejects ${label} before model review and posting`, async () => {
-    for (const field of ["title", "body", "diff"]) {
-      const f = fixture(field === "diff" ? { diff: diff.replace("-old", `-${url}`) } : { metadata: { [field]: url } });
-      await assert.rejects(reviewAndPost({ env, root: "/unused", ...f }), error => isClass("reviewer-errored")(error) && !error.message.includes("GENERATED_ONLY_SECRET"));
-      assert.equal(f.counts().models, 0, field);
-      assert.equal(f.counts().posts, 0, field);
-      assert.equal(f.counts().revocations, 1, field);
-    }
-  });
+test("producer and poster remove the whole encoded credential URL source span", async () => {
+  for (const [label, url] of credentialURLs) {
+    const source = `const link = "${url}"; after();`;
+    const assertSafe = text => {
+      assertEncodedCredentialRemoved(text, url, label);
+      assert.ok(text.includes('const link = "'), label);
+      assert.ok(text.includes('"; after();'), label);
+    };
+    const f = fixture({
+      metadata: { title: source, body: source }, diff: diff.replace("-old", `-${source}`), text: source,
+      inspectData: prepared => { for (const field of ["title", "body", "diff"]) assertSafe(prepared[field]); },
+      inspectBody: assertSafe,
+    });
+    assert.equal((await reviewAndPost({ env, root: "/unused", ...f })).failure_class, "completed", label);
+    assert.equal(f.counts().models, 1, label);
+    assert.equal(f.counts().posts, 1, label);
+    assert.equal(f.counts().revocations, 1, label);
+  }
+});
 
-  test(`poster rejects model ${label} without posting or exposing its value`, async () => {
-    const f = fixture({ text: `Review refers to ${url}` });
-    await assert.rejects(reviewAndPost({ env, root: "/unused", ...f }), error => isClass("reviewer-errored")(error) && !error.message.includes("GENERATED_ONLY_SECRET"));
-    assert.equal(f.counts().models, 1);
+test("benign source escapes, entities, percent text, and encoded URL paths survive every review boundary", async () => {
+  const source = String.raw`const text = "\u0068 \u{68} \x68 \\u0068 %68 &#104; &amp; 100%";
+const unicodePath = "https://example.invalid/\u0072unbook";
+const bracePath = "https://example.invalid/\u{72}unbook";
+const percentPath = "https://example.invalid/%72unbook";
+const entityPath = "https&colon;&sol;&sol;example.invalid/runbook";
+const slashPath = "https:\/\/example.invalid/runbook";`;
+  const sourceDiff = diff.replace("-old", `-${source.replaceAll("\n", "\n-")}`).replace("@@ -1 +1 @@", `@@ -1,${source.split("\n").length} +1 @@`);
+  const f = fixture({ metadata: { title: source, body: source }, diff: sourceDiff, text: source,
+    inspectData: prepared => { assert.equal(prepared.title, source); assert.equal(prepared.body, source); assert.equal(prepared.diff, sourceDiff); },
+    inspectBody: body => assert.ok(body.startsWith(source + "\n\n")),
+  });
+  assert.equal((await reviewAndPost({ env, root: "/unused", ...f })).failure_class, "completed");
+  await withRoot(async root => {
+    let stdin = "";
+    await runModel({ executable: env.CLAUDE_EXECUTABLE, data: { ...data, title: source, body: source, diff: sourceDiff }, oauthToken: "fake-oauth", root,
+      spawnImpl: (...args) => { const child = childProcess([init, success])(...args); child.stdin.on("data", chunk => { stdin += chunk; }); return child; },
+    });
+    assert.deepEqual(JSON.parse(stdin), { ...data, title: source, body: source, diff: sourceDiff });
+  });
+});
+
+test("ambiguous URL source spans and encoding beyond eight layers stop before model dispatch", async () => {
+  let layered = "https://example.invalid/runbook?token=" + encodedSecret;
+  for (let round = 0; round < 9; round++) layered = layered.replaceAll("%", "%25").replace(/^h/, "%68");
+  for (const source of [`"https://example.invalid/runbook?token=${encodedSecret}`, layered]) {
+    const f = fixture({ metadata: { title: source } });
+    await assert.rejects(reviewAndPost({ env, root: "/unused", ...f }), error => isClass("reviewer-errored")(error) && !error.message.includes(encodedSecret));
+    assert.equal(f.counts().models, 0);
     assert.equal(f.counts().posts, 0);
     assert.equal(f.counts().revocations, 1);
-  });
-}
+  }
+});
 
 test("producer and poster remove plain URL credentials from PR fields and returned review", async () => {
   const urls = [
@@ -317,7 +367,7 @@ test("encoded values removed from a plain URL query do not block review or reach
   const url = `https://example.invalid/path?token=${secret}\\u0068%68&#104;&#x68&amp;#${secret}`;
   const assertRedacted = text => {
     assert.ok(!text.includes(secret));
-    assert.ok(text.includes("https://example.invalid/path?[REDACTED_QUERY]"));
+    assert.ok(text.includes("https://example.invalid/path"));
     for (const encoded of ["\\u0068", "%68", "&#104;", "&#x68", "&amp;"]) assert.ok(!text.includes(encoded));
   };
   const f = fixture({
@@ -350,7 +400,7 @@ test("multiple-at URL userinfo cannot enter prepared data, CLI stdin, or posted 
   const url = `https://${pieces[0]}:${pieces[1]}@${pieces[2]}@example.invalid/path`;
   const assertRedacted = text => {
     for (const piece of pieces) assert.ok(!text.includes(piece));
-    assert.ok(text.includes("@example.invalid/path"));
+    assert.ok(text.includes("https://example.invalid/path"));
   };
   const f = fixture({
     metadata: { title: url, body: url }, diff: diff.replace("-old", `-${url}`), text: url,
