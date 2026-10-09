@@ -13,9 +13,6 @@ import {
   readSkipMarker,
   SKIP_MARKER_FILENAME,
 } from "./classify-claude-review-execution.mjs";
-import {
-  main as detectSkip,
-} from "../review/detect-workflow-validation-skip.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -259,7 +256,7 @@ describe("main", () => {
   for (const failureClass of ["completed", "out-of-usage", "auth-failed", "workflow-modified", "reviewer-errored", "never-posted", "startup-failure", "unknown"]) {
     it(`reads a version 1 ${failureClass} envelope through the execution-file boundary`, () => {
       const file = path.join(dir, "text-review-result.json");
-      writeFileSync(file, JSON.stringify({ version: 1, failure_class: failureClass, reviewed_head_sha: "a".repeat(40), producer_sha: "b".repeat(40), ...(failureClass === "completed" ? { comment_id: 123 } : {}) }));
+      writeFileSync(file, JSON.stringify({ version: 1, repository: "example/repo", pr_number: 7, workflow_run: 81, attempt: 2, failure_class: failureClass, reviewed_head_sha: "a".repeat(40), producer_sha: "b".repeat(40), ...(failureClass === "completed" ? { comment_id: 123 } : {}) }));
       assert.equal(main({ argv: [file], env: { ACTION_OUTCOME: "success" } }), failureClass);
       if (failureClass !== "completed") assert.equal(main({ argv: [file], env: { ACTION_OUTCOME: "failure" } }), failureClass);
     });
@@ -268,7 +265,7 @@ describe("main", () => {
   for (const outcome of ["failure", "cancelled"]) {
     it(`does not accept a completed envelope from a ${outcome} action`, () => {
       const file = path.join(dir, "text-review-result.json");
-      writeFileSync(file, JSON.stringify({ version: 1, failure_class: "completed", reviewed_head_sha: "a".repeat(40), producer_sha: "b".repeat(40), comment_id: 123 }));
+      writeFileSync(file, JSON.stringify({ version: 1, repository: "example/repo", pr_number: 7, workflow_run: 81, attempt: 2, failure_class: "completed", reviewed_head_sha: "a".repeat(40), producer_sha: "b".repeat(40), comment_id: 123 }));
       assert.equal(main({ argv: [file], env: { ACTION_OUTCOME: outcome } }), "reviewer-errored");
     });
   }
@@ -334,33 +331,6 @@ describe("main", () => {
     assert.equal(
       main({ argv: [""], env: { ACTION_OUTCOME: "failure", RUNNER_TEMP: dir } }),
       "startup-failure"
-    );
-  });
-
-  it("classifies the marker the review action writes on a workflow-validation skip as workflow-modified", async () => {
-    // End to end across the two actions: review-ui run 36105360372 skipped with
-    // no execution file, and classify must name the cause instead of guessing.
-    const outputFile = path.join(dir, "github-output");
-    writeFileSync(outputFile, "");
-    const { reason } = await detectSkip({
-      env: {
-        RUNNER_TEMP: dir,
-        GITHUB_OUTPUT: outputFile,
-        REPOSITORY: "o/r",
-        WORKFLOW_REF: "o/r/.github/workflows/claude-code-review.yml@refs/pull/77/merge",
-        WORKFLOW_SHA: "merge-sha",
-        DEFAULT_BRANCH: "main",
-        PROMPT_PRESENT: "true",
-      },
-      readLocalBlob: () => "blob-on-pr",
-      fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ sha: "blob-on-main" }) }),
-    });
-
-    assert.equal(reason, "workflow-modified");
-    assert.equal(readFileSync(outputFile, "utf8"), "skip_reason=workflow-modified\n");
-    assert.equal(
-      main({ argv: [""], env: { ACTION_OUTCOME: "failure", RUNNER_TEMP: dir } }),
-      "workflow-modified"
     );
   });
 

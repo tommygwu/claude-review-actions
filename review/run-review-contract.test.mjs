@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readdirSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { reviewAndPost, runModel, ReviewError } from "./run-review.mjs";
+import { reviewAndPost, runModel, ReviewError, main as reviewMain } from "./run-review.mjs";
 import { installClaude } from "./install-claude.mjs";
 
 const head = "a".repeat(40), producer = "b".repeat(40);
@@ -54,7 +54,7 @@ function fixture(options = {}) {
   return {
     fetchImpl,
     modelImpl: async ({ data: prepared, oauthToken }) => {
-      models++; assert.equal(oauthToken, "fake-oauth"); assert.equal(prepared.reviewed_head_sha, head);
+      models++; options.inspectData?.(prepared); assert.equal(oauthToken, "fake-oauth"); assert.equal(prepared.reviewed_head_sha, head);
       if (options.modelError) throw options.modelError;
       return options.text || success.result;
     },
@@ -72,7 +72,7 @@ test("completed review keeps the bot author, exact-head marker, and distinct pro
     },
   });
   const result = await reviewAndPost({ env, root: "/unused", ...f });
-  assert.deepEqual(result, { version: 1, failure_class: "completed", reviewed_head_sha: head, producer_sha: producer, comment_id: 123 });
+  assert.deepEqual(result, { version: 1, repository: "example/repo", pr_number: 7, workflow_run: 81, attempt: 2, failure_class: "completed", reviewed_head_sha: head, producer_sha: producer, comment_id: 123 });
   assert.deepEqual(f.counts(), { checks: 4, models: 1, posts: 1, revocations: 1 });
 });
 
@@ -133,7 +133,7 @@ for (const [failureClass, options] of [
   ["auth-failed", { exchangeStatus: 401, exchange: { message: "Invalid credential" } }],
   ["workflow-modified", { exchangeStatus: 401, exchange: { error: { details: { error_code: "workflow_not_found_on_default_branch" } } } }],
   ["out-of-usage", { modelError: new ReviewError("out-of-usage", "Typed refusal") }],
-  ["auth-failed", { revokeStatus: 503 }],
+  ["reviewer-errored", { revokeStatus: 503 }],
 ]) {
   test(`${failureClass} from ${options.revokeStatus ? "token revocation" : options.modelError ? "model" : "App exchange"} remains a failed review`, async () => {
     const f = fixture(options);
@@ -232,5 +232,89 @@ test("hung CLI is killed and cannot become a completed review", async t => {
     await new Promise(resolve => setImmediate(resolve));
     t.mock.timers.tick(300_000);
     await rejection;
+  });
+});
+
+const ambiguousURLs = [
+  ["source-escaped query delimiter", "https://example.invalid/runbook\\u003ftoken=GENERATED_ONLY_SECRET"],
+  ["multiply percent encoded query", "https://example.invalid/runbook%25253Ftoken%25253DGENERATED_ONLY_SECRET"],
+];
+
+for (const [label, url] of ambiguousURLs) {
+  test(`CLI rejects ${label} before spawning a provider process`, async () => {
+    for (const field of ["title", "body", "diff"]) {
+      await withRoot(async root => {
+        let spawned = false;
+        await assert.rejects(runModel({ executable: env.CLAUDE_EXECUTABLE, data: { ...data, [field]: url }, oauthToken: "fake-oauth", root,
+          spawnImpl: () => { spawned = true; throw new Error("Provider must not start"); },
+        }), error => isClass("reviewer-errored")(error) && !error.message.includes("GENERATED_ONLY_SECRET"));
+        assert.equal(spawned, false, field);
+      });
+    }
+  });
+
+  test(`producer rejects ${label} before model review and posting`, async () => {
+    for (const field of ["title", "body", "diff"]) {
+      const f = fixture(field === "diff" ? { diff: diff.replace("-old", `-${url}`) } : { metadata: { [field]: url } });
+      await assert.rejects(reviewAndPost({ env, root: "/unused", ...f }), error => isClass("reviewer-errored")(error) && !error.message.includes("GENERATED_ONLY_SECRET"));
+      assert.equal(f.counts().models, 0, field);
+      assert.equal(f.counts().posts, 0, field);
+      assert.equal(f.counts().revocations, 1, field);
+    }
+  });
+
+  test(`poster rejects model ${label} without posting or exposing its value`, async () => {
+    const f = fixture({ text: `Review refers to ${url}` });
+    await assert.rejects(reviewAndPost({ env, root: "/unused", ...f }), error => isClass("reviewer-errored")(error) && !error.message.includes("GENERATED_ONLY_SECRET"));
+    assert.equal(f.counts().models, 1);
+    assert.equal(f.counts().posts, 0);
+    assert.equal(f.counts().revocations, 1);
+  });
+}
+
+test("producer and poster remove plain URL credentials from PR fields and returned review", async () => {
+  const urls = [
+    "https://GENERATED_TITLE_USER:GENERATED_TITLE_PASS@example.invalid/title?token=GENERATED_TITLE_QUERY#GENERATED_TITLE_FRAGMENT",
+    "https://example.invalid/body#GENERATED_BODY_FRAGMENT",
+    "https://example.invalid/deleted?token=GENERATED_DIFF_QUERY&source=GENERATED_DIFF_SOURCE",
+  ];
+  const f = fixture({
+    metadata: { title: urls[0], body: urls[1] }, diff: diff.replace("-old", `-${urls[2]}`), text: urls.join("\n"),
+    inspectData: prepared => {
+      assert.ok(!JSON.stringify(prepared).includes("GENERATED_"));
+      for (const [field, pathname] of [["title", "/title"], ["body", "/body"], ["diff", "/deleted"]]) assert.ok(prepared[field].includes(pathname), field);
+    },
+    inspectBody: body => {
+      assert.ok(!body.includes("GENERATED_"));
+      for (const pathname of ["/title", "/body", "/deleted"]) assert.ok(body.includes(pathname));
+    },
+  });
+  assert.equal((await reviewAndPost({ env, root: "/unused", ...f })).failure_class, "completed");
+  assert.equal(f.counts().models, 1);
+  assert.equal(f.counts().posts, 1);
+});
+
+for (const field of ["GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT"]) {
+  test(field + " rejects zero and unsafe numeric IDs before requesting credentials", async () => {
+    for (const value of ["0", "9007199254740992"]) {
+      let fetched = false;
+      await assert.rejects(reviewAndPost({ env: { ...env, [field]: value }, root: "/unused", fetchImpl: () => { fetched = true; throw new Error("No request allowed"); } }), isClass("startup-failure"));
+      assert.equal(fetched, false);
+    }
+  });
+}
+
+test("failed producer writes a typed run-bound envelope with no comment ID", async t => {
+  t.mock.method(console, "error", () => {});
+  t.mock.method(console, "log", () => {});
+  t.mock.method(globalThis, "fetch", () => { throw new Error("No request allowed"); });
+  await withRoot(async root => {
+    const output = path.join(root, "github-output");
+    assert.equal(await reviewMain({ ...env, CLAUDE_CODE_OAUTH_TOKEN: "", RUNNER_TEMP: root, GITHUB_OUTPUT: output }), 1);
+    const fields = Object.fromEntries(readFileSync(output, "utf8").trim().split("\n").map(line => line.split("=")));
+    const result = JSON.parse(readFileSync(fields.result_file, "utf8"));
+    assert.deepEqual(result, { version: 1, repository: "example/repo", pr_number: 7, workflow_run: 81, attempt: 2, failure_class: "startup-failure", reviewed_head_sha: head, producer_sha: producer });
+    assert.deepEqual(JSON.parse(readFileSync(fields.execution_file, "utf8")), result);
+    assert.equal(fields.comment_id, "");
   });
 });

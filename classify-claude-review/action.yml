@@ -67,7 +67,7 @@ runs:
           workflow-modified)
             echo "::error::claude-review was skipped by design because this PR modifies the review workflow (class=workflow-modified). Reruns cannot fix this. The review runs on the next PR after this one merges; a maintainer must review the workflow change by hand." ;;
           reviewer-errored)
-            echo "::error::claude-review ran (real turns and cost recorded) but ended in an error before finishing (class=reviewer-errored). Likely transient — a rerun should succeed." ;;
+            echo "::error::claude-review pipeline failed before completion (class=reviewer-errored). Inspect the trusted diagnostic; transient failures can be retried, while source-coverage refusals need a human review." ;;
           never-posted)
             echo "::error::claude-review could not verify a Claude bot comment for the current PR head (class=never-posted)." ;;
           startup-failure)

@@ -29,8 +29,7 @@ export const FAILURE_CLASSES = Object.freeze([
 // exhaustion can also surface as a rate_limit_event with status "rejected".
 const USAGE_ASSISTANT_ERRORS = Object.freeze(["rate_limit", "billing_error"]);
 
-// Written to $RUNNER_TEMP by review/detect-workflow-validation-skip.mjs, which
-// owns the same constant; a parity test keeps the two in step.
+// Retained for execution files produced by the legacy pinned review wrapper.
 export const SKIP_MARKER_FILENAME = "claude-review-skip.json";
 
 function isRecord(value) {

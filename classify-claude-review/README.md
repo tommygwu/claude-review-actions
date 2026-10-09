@@ -1,190 +1,62 @@
 # classify-claude-review
 
-Version 1 text-review envelopes carry a typed `failure_class` from the same
-closed vocabulary. They keep `reviewed_head_sha` (PR source) distinct from
-`producer_sha` (trusted workflow source). This classifier still accepts legacy
-Claude Code SDK message arrays during caller migration.
-
-Composite action that derives one closed-vocabulary **failure class** from the
-[`claude-code-action`](https://github.com/anthropics/claude-code-action)
-`execution_file` output, so a red review check says *why* it is red.
-
-A review check that just says "failed" forces a human to open the log every
-time. This turns the failure into a machine-readable class, so downstream
-automation can tell "the provider refused for usage limits" (a rerun hits the
-same wall) apart from "the reviewer errored mid-run" (a rerun probably works).
-
-## Usage
+Report a closed failure class from `execution_file`. Version 1 text-review
+results and legacy Claude Code SDK arrays use the same
+[failure vocabulary](./failure-classes.json).
 
 ```yaml
-jobs:
-  claude-review:            # job named exactly `claude-review`
-    steps:
-      # ... your anthropics/claude-code-action review step (id: claude-review) ...
-
-      - name: Classify review outcome   # step named EXACTLY this
-        id: classify
-        if: ${{ !cancelled() }}
-        uses: tommygwu/claude-review-actions/classify-claude-review@REVIEWED_ACTION_COMMIT
-        with:
-          execution_file: ${{ steps.claude-review.outputs.execution_file }}
-          action_outcome: ${{ steps.claude-review.outcome }}
+- name: Classify review outcome
+  id: classify
+  if: ${{ !cancelled() }}
+  uses: tommygwu/claude-review-actions/classify-claude-review@REVIEWED_ACTION_COMMIT
+  with:
+    execution_file: ${{ steps.review.outputs.execution_file }}
+    action_outcome: ${{ steps.review.outcome }}
 ```
 
-Keep `if: ${{ !cancelled() }}`. Do not add a condition on the review outcome.
-The action returns `completed` for a successful review, so `class` is always set
-when the step runs, and an empty `class` then really means broken wiring. A
-condition such as `steps.claude-review.outcome != 'success'` also skips classify
-when `claude-code-action` exits green without running, which hides the cause.
+Replace `REVIEWED_ACTION_COMMIT` with a reviewed full commit SHA. Adopt updates
+through dependency PRs. Run the classifier for both successful and failed
+reviews so an empty class means missing wiring, rather than a skipped step.
 
-Replace `REVIEWED_ACTION_COMMIT` with a reviewed full commit SHA. Adopt changes
-through dependency PRs; moving tags are not an adoption mechanism.
+| Input | Meaning |
+| --- | --- |
+| `execution_file` | File returned by the review step. |
+| `action_outcome` | Step outcome: success, failure, or cancelled. |
 
-## Inputs
+The `class` output is always set when classification runs. Every class except
+`completed` fails the step and prints `CLAUDE_REVIEW_FAILURE_CLASS=<class>`.
 
-| Input | Required | Description |
-|---|---|---|
-| `execution_file` | yes | `steps.<review-step-id>.outputs.execution_file` from the `anthropics/claude-code-action` step. |
-| `action_outcome` | yes | `steps.<review-step-id>.outcome` — `success` \| `failure` \| `cancelled`. |
+| Class | Meaning |
+| --- | --- |
+| `completed` | The text reviewer and trusted poster completed. Legacy success still needs caller comment verification. |
+| `out-of-usage` | Typed provider usage refusal; wait for usage reset. |
+| `auth-failed` | Provider or App authentication failed; repair the credential or authentication path. |
+| `workflow-modified` | The Claude App refused workflow validation. A rerun cannot change the workflow source. |
+| `reviewer-errored` | The review pipeline failed. Retry a transient error; source-coverage refusals need a human review. |
+| `never-posted` | The trusted poster or legacy caller could not verify a Claude bot comment for the current head. |
+| `startup-failure` | No classifiable execution data. This does not prove that the process never started. |
+| `unknown` | Invalid, unreadable, unsupported, or unclassified evidence. |
 
-## Output
+Version 1 envelopes carry `failure_class` as typed data. Their
+`reviewed_head_sha` is the PR source; `producer_sha` is the trusted workflow
+source. A failed step cannot promote a typed completed result to success.
+Unknown envelope versions and classes return `unknown`.
 
-| Output | Description |
-|---|---|
-| `class` | The derived failure class, one of the values in [`failure-classes.json`](./failure-classes.json). |
+Legacy SDK arrays classify typed authentication and usage signals before result
+shape. Authentication takes priority over usage. No model call or prose match
+is used to derive the class. A legacy provider refusal that produces no typed
+signal still reads as `startup-failure`; its old review log is the only evidence
+for the underlying cause.
 
-## Failure classes
+The old pinned wrapper can write `claude-review-skip.json` under `RUNNER_TEMP`.
+This compatibility path returns `workflow-modified` only when no execution file
+exists and the marker names that reason. A real execution file wins. The new
+wrapper reports App validation refusal in its typed envelope directly.
 
-The complete closed vocabulary lives in [`failure-classes.json`](./failure-classes.json),
-which this repo's own tests assert the classifier against:
+Consumers reading the marker from `gh run view --log-failed` depend on the job
+name `claude-review` and calling step name `Classify review outcome`. Preserve
+those names. Consumers using result artifacts must also authenticate the run,
+match its repository, PR, run ID and attempt, and verify the current reviewed
+head. The classifier does not authenticate artifact provenance.
 
-- `completed` — the reviewer finished; the action exits `0` and comment
-  verification follows.
-- `out-of-usage` — the provider rejected the run for usage limits. **Terminal:**
-  a rerun hits the same wall until usage resets.
-- `auth-failed` — provider authentication failed. **Terminal:** repair the
-  credential; reruns cannot fix a broken one.
-- `workflow-modified` — `claude-code-action` skipped the review by design
-  because this PR modifies the review workflow. **Terminal:** reruns cannot fix
-  it. The review runs on the next PR after this one merges; a maintainer
-  reviews the workflow change by hand. Derived from the skip marker, not from
-  the execution file. See [Skip marker](#skip-marker).
-- `reviewer-errored` — the reviewer ran (real turns and cost recorded) but
-  errored before finishing. **Transient:** a rerun should succeed.
-- `startup-failure` — no execution output at all. **Not proof the reviewer never
-  started:** usage exhaustion before a usage signal, a cancelled step, or a
-  failed execution-file write produce the same shape. Distinct from `unknown`,
-  which means output *was* written but could not be read.
-  See [Why `startup-failure` is ambiguous](#why-startup-failure-is-ambiguous).
-- `unknown` — no classifiable evidence (e.g. an unparseable execution file).
-- `never-posted` — trusted poster or legacy workflow verification could not
-  verify a valid Claude bot comment for the current PR head.
-
-Classification reads typed fields from the SDK message array — never prose, and
-never a model call. `auth-failed` outranks `out-of-usage` because a broken
-credential is deterministic across reruns.
-
-### Why `startup-failure` is ambiguous
-
-`out-of-usage` is derived from typed evidence *inside* the execution file. When
-usage exhaustion kills the run before that evidence is recorded, the class
-degrades to `startup-failure`, and no amount of logic here can recover it:
-
-- This action's only inputs are `execution_file` and `action_outcome`. On this
-  path `action_outcome` is `failure` for every cause.
-- `claude-code-action` writes the execution file with whatever messages
-  accumulated — from its SDK catch handler on a thrown request, and from the
-  post-loop path when the stream ends with no `result`. So a first-request
-  refusal produces a literal `[]`, or an init-only stream, which is exactly what
-  a non-usage startup error (bad model, network failure, malformed prompt)
-  produces.
-- The provider's actual refusal reason survives only as prose: the *review*
-  step's job log (`SDK execution error: …`) and that step's `::error::`
-  annotation (`Action failed with error: …`). Neither is an action output, and
-  neither is readable by a later step in the same job.
-
-So the honest handling is to say so: the `startup-failure` annotation names the
-causes and points the operator at the review step's log and annotation, rather
-than asserting a startup problem that may not exist.
-
-**Known consequence, not yet solved.** `startup-failure` is rerun-eligible
-downstream — correct for a genuine startup problem. But a usage-exhausted run
-that lands here is not simply charged one wasted rerun: consumers that requeue
-after a usage reset key on the `out-of-usage` verdict, so this run falls outside
-that sweep and stays red with no automated path back. Closing that gap is a
-consumer-side change, not a producer one; it is tracked separately.
-
-### Legacy skip marker
-
-The new text-review action reports workflow validation refusal directly in its
-version 1 envelope. The following marker support remains for legacy callers.
-
-When the PR modifies the review workflow, `claude-code-action` fails its
-workflow validation, skips the review, and exits success with no execution
-file. The [`review`](../review) action detects that skip, fails its step, and
-writes `$RUNNER_TEMP/claude-review-skip.json` with `"reason": "workflow-modified"`.
-
-This action reads the marker from `$RUNNER_TEMP` by itself, so the inputs do not
-change. It returns `workflow-modified` only when the marker says so **and** the
-execution file is missing or empty. A real execution file always wins, so a
-stale marker cannot override a run's evidence. `$RUNNER_TEMP` is emptied for
-each job. A marker with `"reason": "not-executed"` (the action did nothing, but
-the workflow file matches the default branch) keeps the `startup-failure` class.
-
-Consumers that call `claude-code-action` directly, not through `review`, get no
-marker; the skip then reads as a green review step with nothing posted.
-
-For every non-`completed` class the action prints a per-class `::error::`
-annotation and **exits non-zero**, so the check fails and the marker lands in
-`gh run view --log-failed`.
-
-## Marker transport invariant (read before adopting)
-
-The action prints `CLAUDE_REVIEW_FAILURE_CLASS=<class>`. Tooling that reads the
-class back out of `gh run view --log-failed` matches on the tab-separated
-`<job>\tClassify review outcome\t` prefix, and `--log-failed` attributes every
-line a composite action prints to the **calling step's name**, not the action's
-internal step name.
-
-Two names in the adopting workflow are therefore load-bearing:
-
-- the **job** must be named `claude-review`;
-- the calling **step** must be named exactly `Classify review outcome`.
-
-Rename either and the marker still prints, but the consumer regex stops
-matching — a silent failure. Pin both in a test if you depend on them.
-
-## Consuming the class downstream
-
-### Rerun policy for github-fix consumers
-
-| Class | Rerun? |
-|---|---|
-| `out-of-usage` | No. Terminal until usage resets. |
-| `auth-failed` | No. Terminal until the credential is repaired. |
-| `workflow-modified` | No. Terminal for this PR head. The review runs on the next PR after merge; a maintainer reviews the workflow change by hand. |
-| `reviewer-errored` | Yes. Likely transient. |
-
-Treat `workflow-modified` like `out-of-usage` and `auth-failed`: open the retry
-circuit instead of re-kicking. A consumer that does not know the class yet
-falls back to its default handling, which may spend a useless rerun.
-
-`steps.classify.outputs.class` is available to later steps. A common pattern is
-a `Verify a review comment was posted` step that folds `completed` →
-`never-posted` when the reviewer finished but posted nothing usable. That
-folding, and any self-heal built on it, stays in the calling workflow — this
-action only produces the class.
-
-If your workflow branches on individual class names, pin the set you depend on
-in your own test. This repo's `failure-classes.json` is not reachable from a
-consumer's test run, so nothing will otherwise tell you when the vocabulary
-changes here.
-
-## Verifying a change
-
-```bash
-node --test 'classify-claude-review/*.test.mjs'
-```
-
-The suite proves the classification logic and asserts `failure-classes.json`
-stays in lockstep with the classifier's `FAILURE_CLASSES`.
+Run the focused suite with `node scripts/test-unit.mjs classifier`.

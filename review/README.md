@@ -29,11 +29,12 @@ provider endpoint, CLI path, or prepared review data is accepted.
 | `comment_id` | Verified Claude bot comment ID, only on `completed`. |
 | `skip_reason` | `workflow-modified` if the Claude App refuses workflow validation. |
 
-The envelope is `{version:1,failure_class,reviewed_head_sha,producer_sha}` with
+The envelope is `{version:1,repository,pr_number,workflow_run,attempt,failure_class,reviewed_head_sha,producer_sha}` with
 `comment_id` on completion. `failure_class` uses
 [the existing vocabulary](../classify-claude-review/failure-classes.json).
 The producer source SHA is distinct from the reviewed PR SHA. Delivery consumers
 must authenticate the producer run and check the current reviewed head.
+`workflow_run` and `attempt` are integers that bind the artifact to its producing run.
 
 ## Boundary
 
