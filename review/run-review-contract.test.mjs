@@ -253,6 +253,9 @@ for (const [label, first] of [
 ]) encodedSchemes.push([`${label} encoded first scheme character`, `${first}ttps`]);
 const encodedSecret = `GENERATED_ONLY_SECRET_${randomUUID()}`;
 const credentialURLs = [
+  ["WHATWG backslash authority", String.raw`https:\\example.invalid/runbook?token=${encodedSecret}`],
+  ["WHATWG one-slash authority", `https:/example.invalid/runbook?token=${encodedSecret}`],
+  ["WHATWG no-slash authority", `https:example.invalid/runbook?token=${encodedSecret}`],
   ...encodedSchemes.map(([label, scheme]) => [label, `${scheme}://example.invalid/runbook?token=${encodedSecret}`]),
   ["source-escaped query delimiter", `https://example.invalid/runbook\\u003ftoken=${encodedSecret}`],
   ["multiply percent encoded query", `https://example.invalid/runbook%25253Ftoken%25253D${encodedSecret}`],
@@ -269,7 +272,7 @@ const assertEncodedCredentialRemoved = (text, url, label) => {
   assert.ok(text.includes("https://example.invalid/runbook"), label);
 };
 
-test("CLI stdin removes encoded credential URL spans while keeping path context", async () => {
+test("CLI stdin removes encoded and normalized credential URL spans while keeping path context", async () => {
   for (const [label, url] of credentialURLs) {
       await withRoot(async root => {
         let stdin = "";
@@ -286,7 +289,7 @@ test("CLI stdin removes encoded credential URL spans while keeping path context"
   }
 });
 
-test("producer and poster remove the whole encoded credential URL source span", async () => {
+test("producer and poster remove whole encoded and normalized credential URL source spans", async () => {
   for (const [label, url] of credentialURLs) {
     const source = `const link = "${url}"; after();`;
     const assertSafe = text => {
@@ -306,13 +309,18 @@ test("producer and poster remove the whole encoded credential URL source span", 
   }
 });
 
-test("benign source escapes, entities, percent text, and encoded URL paths survive every review boundary", async () => {
+test("benign source escapes, encoded URL paths, and opaque labels survive every review boundary", async () => {
   const source = String.raw`const text = "\u0068 \u{68} \x68 \\u0068 %68 &#104; &amp; 100%";
 const unicodePath = "https://example.invalid/\u0072unbook";
 const bracePath = "https://example.invalid/\u{72}unbook";
 const percentPath = "https://example.invalid/%72unbook";
 const entityPath = "https&colon;&sol;&sol;example.invalid/runbook";
-const slashPath = "https:\/\/example.invalid/runbook";`;
+const slashPath = "https:\/\/example.invalid/runbook";
+const backslashPath = "https:\\example.invalid/runbook";
+const oneSlashPath = "https:/example.invalid/runbook";
+const noSlashPath = "https:example.invalid/runbook";
+const opaque = "label:foo?x opaque:code#fragment mailto:reader@example.invalid";
+const nestedPath = "label:https://example.invalid/runbook";`;
   const sourceDiff = diff.replace("-old", `-${source.replaceAll("\n", "\n-")}`).replace("@@ -1 +1 @@", `@@ -1,${source.split("\n").length} +1 @@`);
   const f = fixture({ metadata: { title: source, body: source }, diff: sourceDiff, text: source,
     inspectData: prepared => { assert.equal(prepared.title, source); assert.equal(prepared.body, source); assert.equal(prepared.diff, sourceDiff); },
@@ -340,7 +348,7 @@ test("ambiguous URL source spans and encoding beyond eight layers stop before mo
   }
 });
 
-test("producer and poster remove plain URL credentials from PR fields and returned review", async () => {
+test("plain credential URLs on separate source lines are removed from PR fields, CLI stdin, and returned review", async () => {
   const urls = [
     "https://GENERATED_TITLE_USER:GENERATED_TITLE_PASS@example.invalid/title?token=GENERATED_TITLE_QUERY#GENERATED_TITLE_FRAGMENT",
     "https://example.invalid/body#GENERATED_BODY_FRAGMENT",
@@ -360,6 +368,23 @@ test("producer and poster remove plain URL credentials from PR fields and return
   assert.equal((await reviewAndPost({ env, root: "/unused", ...f })).failure_class, "completed");
   assert.equal(f.counts().models, 1);
   assert.equal(f.counts().posts, 1);
+  await withRoot(async root => {
+    let stdin = "";
+    const source = urls.join("\n");
+    const sourceDiff = diff.replace("@@ -1 +1 @@", "@@ -1,3 +1 @@").replace("-old", urls.map(url => `-${url}`).join("\n"));
+    await runModel({ executable: env.CLAUDE_EXECUTABLE, data: { ...data, title: source, body: source, diff: sourceDiff }, oauthToken: "fake-oauth", root,
+      spawnImpl: (...args) => {
+        const child = childProcess([init, success])(...args);
+        child.stdin.on("data", chunk => { stdin += chunk; });
+        return child;
+      },
+    });
+    for (const field of ["title", "body", "diff"]) {
+      const input = JSON.parse(stdin)[field];
+      assert.ok(!input.includes("GENERATED_"), field);
+      for (const pathname of ["/title", "/body", "/deleted"]) assert.ok(input.includes(pathname), field);
+    }
+  });
 });
 
 test("encoded values removed from a plain URL query do not block review or reach CLI stdin or a comment", async () => {

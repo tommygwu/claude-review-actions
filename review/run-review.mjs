@@ -92,8 +92,9 @@ function sourceURLend(text, start) {
 
 function redactText(text) {
   const shadow = sourceShadow(text), replacements = [];
+  const matches = [...shadow.text.matchAll(/(?:https?|wss?|ftp):/gi), ...shadow.text.matchAll(/[a-z][a-z0-9+.-]*:\/\//gi)].sort((a, b) => a.index - b.index);
   let consumed = 0;
-  for (const match of shadow.text.matchAll(/https?:\/\//gi)) {
+  for (const match of matches) {
     const start = shadow.starts[match.index];
     if (start < consumed) continue;
     const end = sourceURLend(text, start);
@@ -106,9 +107,10 @@ function redactText(text) {
       if (/[?@#]/.test(candidate)) throw new ReviewError("reviewer-errored", "URL authentication span is ambiguous; use a human review");
       continue;
     }
+    if (!url.hostname) continue;
     consumed = end;
     if (!url.username && !url.password && !url.search && !url.hash) continue;
-    const original = text.slice(start, end), visible = `${url.origin}${url.pathname}`;
+    const original = text.slice(start, end), origin = url.origin === "null" ? `${url.protocol}//${url.host}` : url.origin, visible = `${origin}${url.pathname}`;
     const replacement = original === candidate ? `${visible}?[REDACTED_QUERY]` : `[REDACTED_URL ${visible}]`;
     replacements.push({ start, end, replacement });
   }
