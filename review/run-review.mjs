@@ -92,25 +92,37 @@ function sourceURLend(text, start) {
 
 function redactText(text) {
   const shadow = sourceShadow(text), replacements = [];
-  const matches = [...shadow.text.matchAll(/(?:https?|wss?|ftp):/gi), ...shadow.text.matchAll(/[a-z][a-z0-9+.-]*:\/\//gi)].sort((a, b) => a.index - b.index);
+  const network = [...shadow.text.matchAll(/(?:https?|wss?|ftp):/gi)];
+  const other = [...shadow.text.matchAll(/[a-z][a-z0-9+.-]*:\/\//gi)].filter(match => !/(?:https?|wss?|ftp):\/\//i.test(match[0]));
+  const matches = [...network, ...other].sort((a, b) => a.index - b.index);
   let consumed = 0;
-  for (const match of matches) {
+  for (let index = 0; index < matches.length; index++) {
+    const match = matches[index], next = matches[index + 1];
     const start = shadow.starts[match.index];
     if (start < consumed) continue;
-    const end = sourceURLend(text, start);
+    const rawEnd = sourceURLend(text, start);
+    const nextStart = next ? shadow.starts[next.index] : rawEnd;
+    let end = nextStart > start && nextStart < rawEnd ? nextStart : rawEnd;
     let shadowEnd = match.index;
     while (shadowEnd < shadow.text.length && shadow.starts[shadowEnd] < end) shadowEnd++;
     const candidate = shadow.text.slice(match.index, shadowEnd);
+    const overlap = next && next.index < shadowEnd && nextStart === start && /[?@#]/.test(candidate);
+    const original = text.slice(start, end);
+    let literal;
+    try { literal = new URL(original); } catch {}
+    const literalCanonical = literal?.hostname && !/\\|&#|&[a-z][a-z0-9]+;/i.test(original);
     let url;
-    try { url = new URL(candidate); }
+    try { url = literalCanonical ? literal : new URL(candidate); }
     catch {
       if (/[?@#]/.test(candidate)) throw new ReviewError("reviewer-errored", "URL authentication span is ambiguous; use a human review");
       continue;
     }
     if (!url.hostname) continue;
+    const suffix = url.href.includes("?") || url.href.includes("#");
+    if (suffix) end = rawEnd;
     consumed = end;
-    if (!url.username && !url.password && !url.search && !url.hash) continue;
-    const original = text.slice(start, end), origin = url.origin === "null" ? `${url.protocol}//${url.host}` : url.origin, visible = `${origin}${url.pathname}`;
+    if (!overlap && !url.username && !url.password && !suffix) continue;
+    const origin = url.origin === "null" ? `${url.protocol}//${url.host}` : url.origin, visible = overlap ? origin : `${origin}${url.pathname}`;
     const replacement = original === candidate ? `${visible}?[REDACTED_QUERY]` : `[REDACTED_URL ${visible}]`;
     replacements.push({ start, end, replacement });
   }

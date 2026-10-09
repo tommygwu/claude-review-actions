@@ -252,13 +252,23 @@ for (const [label, first] of [
   ["semicolonless HTML decimal", "&#104"], ["semicolonless HTML hex", "&#x68"],
 ]) encodedSchemes.push([`${label} encoded first scheme character`, `${first}ttps`]);
 const encodedSecret = `GENERATED_ONLY_SECRET_${randomUUID()}`;
+const adjacentEncodedCredentialURL = [...`https://safe.invalid/path,https://user:${encodedSecret}@example.invalid/runbook`].map(sourceEncoders[3][1]).join("");
 const credentialURLs = [
+  ["adjacent Markdown URLs", `[safe](https://safe.invalid/path)[login](https://user:${encodedSecret}@example.invalid/runbook)`],
+  ["comma-separated URLs", `https://safe.invalid/path,https://user:${encodedSecret}@example.invalid/runbook`],
+  ["one percent group with adjacent URL credentials", adjacentEncodedCredentialURL, "https://safe.invalid"],
+  ["comma-separated URLs followed by an encoded URL group", `https://safe.invalid/path,https://user:${encodedSecret}@example.invalid/runbook\n${adjacentEncodedCredentialURL}`],
+  ["percent-encoded slash in literal URL username", `https://u%2F${encodedSecret}@example.invalid/runbook`],
+  ["percent-encoded slash in literal URL password", `https://user:${encodedSecret}%2Fsuffix@example.invalid/runbook`],
+  ["query value containing a URL", `https://example.invalid/runbook?token=https://${encodedSecret}.invalid/private`],
+  ["bare query containing a URL", `https://example.invalid/runbook?https://${encodedSecret}.invalid/private`],
+  ["fragment value containing a URL", `https://example.invalid/runbook#https://${encodedSecret}.invalid/private`],
   ["WHATWG backslash authority", String.raw`https:\\example.invalid/runbook?token=${encodedSecret}`],
   ["WHATWG one-slash authority", `https:/example.invalid/runbook?token=${encodedSecret}`],
   ["WHATWG no-slash authority", `https:example.invalid/runbook?token=${encodedSecret}`],
   ...encodedSchemes.map(([label, scheme]) => [label, `${scheme}://example.invalid/runbook?token=${encodedSecret}`]),
   ["source-escaped query delimiter", `https://example.invalid/runbook\\u003ftoken=${encodedSecret}`],
-  ["multiply percent encoded query", `https://example.invalid/runbook%25253Ftoken%25253D${encodedSecret}`],
+  ["multiply percent encoded value in a real query", `https://example.invalid/runbook?token=prefix%25253Fvalue%25253D${encodedSecret}`],
   ["encoded whitespace inside query", `https://example.invalid/runbook?token=prefix\\u0020${encodedSecret}`],
   ["encoded quote inside query", `https://example.invalid/runbook?token=prefix\\u0022${encodedSecret}`],
   ["fully percent encoded URL", [...`https://example.invalid/runbook?token=${encodedSecret}`].map(sourceEncoders[3][1]).join("")],
@@ -266,14 +276,14 @@ const credentialURLs = [
   ["encoded multiple-at userinfo", `https&colon;&sol;&sol;user&colon;${encodedSecret}&commat;other&commat;example.invalid/runbook`],
 ];
 
-const assertEncodedCredentialRemoved = (text, url, label) => {
+const assertEncodedCredentialRemoved = (text, url, label, context = "https://example.invalid/runbook") => {
   for (const value of [encodedSecret, [...encodedSecret].map(sourceEncoders[3][1]).join("")]) assert.ok(!text.includes(value), label);
   assert.ok(!text.includes(url), label);
-  assert.ok(text.includes("https://example.invalid/runbook"), label);
+  assert.ok(text.includes(context), label);
 };
 
-test("CLI stdin removes encoded and normalized credential URL spans while keeping path context", async () => {
-  for (const [label, url] of credentialURLs) {
+test("CLI stdin removes encoded, normalized, and adjacent credential URL spans while keeping safe context", async () => {
+  for (const [label, url, context] of credentialURLs) {
       await withRoot(async root => {
         let stdin = "";
         const result = await runModel({ executable: env.CLAUDE_EXECUTABLE, data: { ...data, title: url }, oauthToken: "fake-oauth", root,
@@ -284,21 +294,22 @@ test("CLI stdin removes encoded and normalized credential URL spans while keepin
           },
         });
         assert.equal(result, success.result, label);
-        assertEncodedCredentialRemoved(JSON.parse(stdin).title, url, label);
+        assertEncodedCredentialRemoved(JSON.parse(stdin).title, url, label, context);
       });
   }
 });
 
-test("producer and poster remove whole encoded and normalized credential URL source spans", async () => {
-  for (const [label, url] of credentialURLs) {
+test("producer and poster remove encoded, normalized, and adjacent credential URL source spans", async () => {
+  for (const [label, url, context] of credentialURLs) {
     const source = `const link = "${url}"; after();`;
+    const sourceDiff = diff.replace("@@ -1 +1 @@", `@@ -1,${source.split("\n").length} +1 @@`).replace("-old", `-${source.replaceAll("\n", "\n-")}`);
     const assertSafe = text => {
-      assertEncodedCredentialRemoved(text, url, label);
+      assertEncodedCredentialRemoved(text, url, label, context);
       assert.ok(text.includes('const link = "'), label);
       assert.ok(text.includes('"; after();'), label);
     };
     const f = fixture({
-      metadata: { title: source, body: source }, diff: diff.replace("-old", `-${source}`), text: source,
+      metadata: { title: source, body: source }, diff: sourceDiff, text: source,
       inspectData: prepared => { for (const field of ["title", "body", "diff"]) assertSafe(prepared[field]); },
       inspectBody: assertSafe,
     });
@@ -309,18 +320,23 @@ test("producer and poster remove whole encoded and normalized credential URL sou
   }
 });
 
-test("benign source escapes, encoded URL paths, and opaque labels survive every review boundary", async () => {
+test("benign source escapes, encoded and adjacent URLs, and opaque labels survive every review boundary", async () => {
   const source = String.raw`const text = "\u0068 \u{68} \x68 \\u0068 %68 &#104; &amp; 100%";
 const unicodePath = "https://example.invalid/\u0072unbook";
 const bracePath = "https://example.invalid/\u{72}unbook";
 const percentPath = "https://example.invalid/%72unbook";
+const reservedPercentPath = "https://example.invalid/path%3Fquestion%23fragment%2Fsegment";
+const multiplyPercentPath = "https://example.invalid/runbook%25253Ftoken%25253Dpublic";
 const entityPath = "https&colon;&sol;&sol;example.invalid/runbook";
 const slashPath = "https:\/\/example.invalid/runbook";
 const backslashPath = "https:\\example.invalid/runbook";
 const oneSlashPath = "https:/example.invalid/runbook";
 const noSlashPath = "https:example.invalid/runbook";
 const opaque = "label:foo?x opaque:code#fragment mailto:reader@example.invalid";
-const nestedPath = "label:https://example.invalid/runbook";`;
+const nestedPath = "label:https://example.invalid/runbook";
+const adjacentMarkdown = "[safe](https://safe.invalid/path)[other](https://example.invalid/runbook)";
+const adjacentComma = "https://safe.invalid/path,https://example.invalid/runbook";
+const encodedAdjacent = "${[..."https://safe.invalid/path,https://example.invalid/runbook"].map(sourceEncoders[3][1]).join("")}";`;
   const sourceDiff = diff.replace("-old", `-${source.replaceAll("\n", "\n-")}`).replace("@@ -1 +1 @@", `@@ -1,${source.split("\n").length} +1 @@`);
   const f = fixture({ metadata: { title: source, body: source }, diff: sourceDiff, text: source,
     inspectData: prepared => { assert.equal(prepared.title, source); assert.equal(prepared.body, source); assert.equal(prepared.diff, sourceDiff); },
