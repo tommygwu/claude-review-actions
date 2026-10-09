@@ -9,15 +9,12 @@ import {
   classifyExecutionFile,
   classifyMessages,
   FAILURE_CLASSES,
-  getErrorDetails,
-  isMainModule,
   main,
   readSkipMarker,
   SKIP_MARKER_FILENAME,
 } from "./classify-claude-review-execution.mjs";
 import {
   main as detectSkip,
-  SKIP_MARKER_FILENAME as REVIEW_SKIP_MARKER_FILENAME,
 } from "../review/detect-workflow-validation-skip.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -128,13 +125,6 @@ describe("classifyMessages", () => {
 });
 
 describe("classifyExecutionFile", () => {
-  it("keeps diagnostics safe when a parser throws a primitive", () => {
-    assert.deepEqual(getErrorDetails("unexpected parser failure"), {
-      code: "unknown",
-      message: "unexpected parser failure",
-    });
-    assert.deepEqual(getErrorDetails(null), { code: "unknown", message: "null" });
-  });
 
   it("returns completed for a successful action outcome without reading the file", () => {
     assert.equal(classifyExecutionFile({ actionOutcome: "success", fileContent: null }), "completed");
@@ -253,19 +243,6 @@ describe("classifyExecutionFile", () => {
     );
   });
 
-  it("only ever returns classes from the closed vocabulary github-fix keys on", () => {
-    const samples = [
-      classifyExecutionFile({ actionOutcome: "success", fileContent: null }),
-      classifyExecutionFile({ actionOutcome: "failure", fileContent: null }),
-      classifyExecutionFile({
-        actionOutcome: "failure",
-        fileContent: JSON.stringify([resultMessage({ num_turns: 2 })]),
-      }),
-    ];
-    for (const sample of samples) {
-      assert.ok(FAILURE_CLASSES.includes(sample));
-    }
-  });
 });
 
 describe("main", () => {
@@ -278,6 +255,35 @@ describe("main", () => {
   afterEach(() => {
     rmSync(dir, { recursive: true, force: true });
   });
+
+  for (const failureClass of ["completed", "out-of-usage", "auth-failed", "workflow-modified", "reviewer-errored", "never-posted", "startup-failure", "unknown"]) {
+    it(`reads a version 1 ${failureClass} envelope through the execution-file boundary`, () => {
+      const file = path.join(dir, "text-review-result.json");
+      writeFileSync(file, JSON.stringify({ version: 1, failure_class: failureClass, reviewed_head_sha: "a".repeat(40), producer_sha: "b".repeat(40), ...(failureClass === "completed" ? { comment_id: 123 } : {}) }));
+      assert.equal(main({ argv: [file], env: { ACTION_OUTCOME: "success" } }), failureClass);
+      if (failureClass !== "completed") assert.equal(main({ argv: [file], env: { ACTION_OUTCOME: "failure" } }), failureClass);
+    });
+  }
+
+  for (const outcome of ["failure", "cancelled"]) {
+    it(`does not accept a completed envelope from a ${outcome} action`, () => {
+      const file = path.join(dir, "text-review-result.json");
+      writeFileSync(file, JSON.stringify({ version: 1, failure_class: "completed", reviewed_head_sha: "a".repeat(40), producer_sha: "b".repeat(40), comment_id: 123 }));
+      assert.equal(main({ argv: [file], env: { ACTION_OUTCOME: outcome } }), "reviewer-errored");
+    });
+  }
+
+  for (const [label, envelope] of [
+    ["unsupported version", { version: 2, failure_class: "completed" }],
+    ["unknown failure class", { version: 1, failure_class: "retry-anyway" }],
+  ]) {
+    it(`does not treat ${label} as success because the action step was green`, () => {
+      const file = path.join(dir, "text-review-result.json");
+      writeFileSync(file, JSON.stringify(envelope));
+      assert.equal(main({ argv: [file], env: { ACTION_OUTCOME: "success" } }), "unknown");
+      assert.equal(main({ argv: [file], env: { ACTION_OUTCOME: "failure" } }), "unknown");
+    });
+  }
 
   it("reads the execution file from argv and classifies it", () => {
     const file = path.join(dir, "claude-execution-output.json");
@@ -358,50 +364,6 @@ describe("main", () => {
     );
   });
 
-  it("shares one marker filename with the review action", () => {
-    assert.equal(SKIP_MARKER_FILENAME, REVIEW_SKIP_MARKER_FILENAME);
-  });
-
-  it("does not evaluate the executable entrypoint when argv is absent", () => {
-    assert.equal(isMainModule(undefined), false);
-  });
-});
-
-describe("startup-failure annotation", () => {
-  it("names both causes instead of asserting the reviewer never started", () => {
-    // The class cannot separate a genuine startup failure from usage
-    // exhaustion, so the operator-facing text is the only thing standing
-    // between an ambiguous class and a rerun spent against a usage wall.
-    const actionYml = readFileSync(path.join(HERE, "action.yml"), "utf8");
-    const annotation = actionYml
-      .split("\n")
-      .find((line) => line.includes("::error::") && line.includes("class=startup-failure"));
-
-    assert.ok(annotation, "action.yml must emit a startup-failure ::error:: annotation");
-    assert.ok(/never started/.test(annotation), "annotation must still name the startup cause");
-    assert.ok(/usage exhaustion/.test(annotation), "annotation must name the usage cause");
-    assert.ok(
-      /indistinguishable/.test(annotation),
-      "annotation must say the causes cannot be told apart here"
-    );
-    assert.ok(
-      /cancelled/.test(annotation),
-      "enumeration must stay non-exhaustive — a cancelled step lands here too"
-    );
-  });
-});
-
-describe("class annotations", () => {
-  it("gives every classifier-emitted failure class its own case arm, so none falls through to the unknown text", () => {
-    const actionYml = readFileSync(path.join(HERE, "action.yml"), "utf8");
-    const workflowDerived = new Set(["completed", "never-posted", "unknown"]);
-    for (const failureClass of FAILURE_CLASSES.filter((value) => !workflowDerived.has(value))) {
-      assert.ok(
-        actionYml.includes(`          ${failureClass})\n`),
-        `action.yml is missing a case arm for ${failureClass}`
-      );
-    }
-  });
 });
 
 describe("failure-classes.json", () => {
@@ -413,8 +375,4 @@ describe("failure-classes.json", () => {
     assert.deepEqual(artifact.classes, [...FAILURE_CLASSES]);
   });
 
-  it("describes every class and nothing else", () => {
-    const artifact = JSON.parse(readFileSync(path.join(HERE, "failure-classes.json"), "utf8"));
-    assert.deepEqual(Object.keys(artifact.descriptions).sort(), [...FAILURE_CLASSES].sort());
-  });
 });

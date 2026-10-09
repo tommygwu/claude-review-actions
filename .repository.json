@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "runtime": { "kind": "node", "version_source": ".node-version", "probe": ["node", "--version"] },
+  "dependencies": { "required": false, "lockfile": null },
+  "validation": { "changed": ["node", "scripts/checks.mjs", "changed"], "full": ["node", "scripts/checks.mjs", "full"] },
+  "capabilities": [],
+  "gates": {
+    "shared": [".repository.json", ".repository-suite-plan.json", ".node-version", "scripts/**", ".github/workflows/**"],
+    "inert": ["README.md"],
+    "units": {
+      "classifier": { "lane": "fast", "inputs": ["classify-claude-review/**"] },
+      "review": { "lane": "fast", "inputs": ["review/**", "classify-claude-review/failure-classes.json", "classify-claude-review/classify-claude-review-execution.mjs"] }
+    }
+  }
+}

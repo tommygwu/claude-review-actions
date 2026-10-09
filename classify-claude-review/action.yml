@@ -68,6 +68,8 @@ runs:
             echo "::error::claude-review was skipped by design because this PR modifies the review workflow (class=workflow-modified). Reruns cannot fix this. The review runs on the next PR after this one merges; a maintainer must review the workflow change by hand." ;;
           reviewer-errored)
             echo "::error::claude-review ran (real turns and cost recorded) but ended in an error before finishing (class=reviewer-errored). Likely transient — a rerun should succeed." ;;
+          never-posted)
+            echo "::error::claude-review could not verify a Claude bot comment for the current PR head (class=never-posted)." ;;
           startup-failure)
             echo "::error::claude-review produced no classifiable execution output (class=startup-failure). The causes are indistinguishable from here: most often the reviewer never started, but usage exhaustion before any usage signal, a cancelled review step, or a failed execution-file write all produce the same shape. Read the review step's own log and its error annotation before spending a rerun — a provider rate-limit error there means usage, and a rerun hits the same wall until usage resets." ;;
           *)

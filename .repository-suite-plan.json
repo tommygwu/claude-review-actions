@@ -1,0 +1,7 @@
+{
+  "selections": { "changed": ["classifier", "review"], "full": ["classifier", "review"], "optional": {} },
+  "units": [
+    { "id": "classifier", "command": ["node", "scripts/test-unit.mjs", "classifier"], "inputs": ["classify-claude-review", "scripts"], "dependencies": [], "resource": { "class": "fast" }, "timeout_seconds": 120, "cache": { "environment": [] } },
+    { "id": "review", "command": ["node", "scripts/test-unit.mjs", "review"], "inputs": ["review", "classify-claude-review", "scripts"], "dependencies": [], "resource": { "class": "fast" }, "timeout_seconds": 180, "cache": { "environment": [] } }
+  ]
+}

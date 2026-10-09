@@ -1,5 +1,10 @@
 # classify-claude-review
 
+Version 1 text-review envelopes carry a typed `failure_class` from the same
+closed vocabulary. They keep `reviewed_head_sha` (PR source) distinct from
+`producer_sha` (trusted workflow source). This classifier still accepts legacy
+Claude Code SDK message arrays during caller migration.
+
 Composite action that derives one closed-vocabulary **failure class** from the
 [`claude-code-action`](https://github.com/anthropics/claude-code-action)
 `execution_file` output, so a red review check says *why* it is red.
@@ -20,7 +25,7 @@ jobs:
       - name: Classify review outcome   # step named EXACTLY this
         id: classify
         if: ${{ !cancelled() }}
-        uses: tommygwu/claude-review-actions/classify-claude-review@v1
+        uses: tommygwu/claude-review-actions/classify-claude-review@REVIEWED_ACTION_COMMIT
         with:
           execution_file: ${{ steps.claude-review.outputs.execution_file }}
           action_outcome: ${{ steps.claude-review.outcome }}
@@ -32,8 +37,8 @@ when the step runs, and an empty `class` then really means broken wiring. A
 condition such as `steps.claude-review.outcome != 'success'` also skips classify
 when `claude-code-action` exits green without running, which hides the cause.
 
-`v1` moves as compatible changes ship. Pin a full commit SHA instead if you
-want changes to reach your repo only when you deliberately bump.
+Replace `REVIEWED_ACTION_COMMIT` with a reviewed full commit SHA. Adopt changes
+through dependency PRs; moving tags are not an adoption mechanism.
 
 ## Inputs
 
@@ -72,9 +77,8 @@ which this repo's own tests assert the classifier against:
   which means output *was* written but could not be read.
   See [Why `startup-failure` is ambiguous](#why-startup-failure-is-ambiguous).
 - `unknown` — no classifiable evidence (e.g. an unparseable execution file).
-- `never-posted` — **workflow-derived, not emitted by this action.** The
-  caller's verify/fallback steps emit it when a `completed` run left no valid
-  review comment. The classifier never returns it.
+- `never-posted` — trusted poster or legacy workflow verification could not
+  verify a valid Claude bot comment for the current PR head.
 
 Classification reads typed fields from the SDK message array — never prose, and
 never a model call. `auth-failed` outranks `out-of-usage` because a broken
@@ -110,7 +114,10 @@ after a usage reset key on the `out-of-usage` verdict, so this run falls outside
 that sweep and stays red with no automated path back. Closing that gap is a
 consumer-side change, not a producer one; it is tracked separately.
 
-### Skip marker
+### Legacy skip marker
+
+The new text-review action reports workflow validation refusal directly in its
+version 1 envelope. The following marker support remains for legacy callers.
 
 When the PR modifies the review workflow, `claude-code-action` fails its
 workflow validation, skips the review, and exits success with no execution

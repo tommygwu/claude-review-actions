@@ -9,10 +9,18 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
-      # The classifier and the skip detector are dependency-free and run on the
-      # runner's bundled Node, so there is nothing to install.
-      - name: Run classifier parity and skip-detection suites
-        run: node --test 'classify-claude-review/*.test.mjs' 'review/*.test.mjs'
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .node-version
+      - name: Validate pull request changes
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REV: origin/${{ github.base_ref }}
+        run: node scripts/checks.mjs changed
+      - name: Validate main
+        if: github.event_name == 'push'
+        run: node scripts/checks.mjs full

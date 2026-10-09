@@ -1,66 +1,53 @@
-name: Claude PR review
-description: >-
-  Run anthropics/claude-code-action as a PR reviewer with the fleet's shared
-  model and review defaults. The caller owns the prompt and the tool allowlist,
-  because those differ per repository.
-
+name: Claude PR text review
+description: Review an exact PR head as data with no model tools, then post as claude[bot].
 inputs:
   claude_code_oauth_token:
-    description: The Claude Code OAuth token (secrets.CLAUDE_CODE_OAUTH_TOKEN).
+    description: Claude Code subscription OAuth token from a trusted main-only environment.
     required: true
-  prompt:
-    description: The complete review prompt.
+  pr_number:
+    description: PR number selected by the trusted caller.
     required: true
-  allowed_tools:
-    description: >-
-      Comma-separated Claude Code permission rules, passed as --allowed-tools.
-      They add to the action's read-only base tool set.
+  reviewed_head_sha:
+    description: Exact 40-character PR head to review.
     required: true
-
 outputs:
   execution_file:
-    description: >-
-      Path to the claude-code-action execution file, for
-      classify-claude-review.
+    description: Typed execution envelope for classify-claude-review.
     value: ${{ steps.review.outputs.execution_file }}
+  result_file:
+    description: Version 1 terminal result with distinct reviewed and producer SHAs.
+    value: ${{ steps.review.outputs.result_file }}
+  reviewed_head_sha:
+    description: Reviewed PR head, never the producer workflow source SHA.
+    value: ${{ steps.review.outputs.reviewed_head_sha }}
+  producer_sha:
+    description: Trusted workflow source SHA from github.workflow_sha.
+    value: ${{ steps.review.outputs.producer_sha }}
+  comment_id:
+    description: Verified claude[bot] comment ID, set on completed only.
+    value: ${{ steps.review.outputs.comment_id }}
   skip_reason:
-    description: >-
-      Set only when claude-code-action returned success without running the
-      reviewer. `workflow-modified`: the PR changes the review workflow, so
-      the upstream workflow validation skipped the run. `not-executed`: no
-      known cause. Either way this action fails and writes a marker that
-      classify-claude-review reads. Empty on every normal run.
-    value: ${{ steps.skip-check.outputs.skip_reason }}
-
+    description: workflow-modified when the upstream App refuses workflow validation.
+    value: ${{ steps.review.outputs.skip_reason }}
 runs:
   using: composite
   steps:
-    # Subagent tools are disallowed: they run in the background in a headless
-    # runner, nothing re-invokes the parent, and a reviewer that ends its turn
-    # "waiting" ends the run with nothing posted (hcos PR #3247, run
-    # 30118014714). Both historical names are listed; an unmatched name is
-    # harmless.
-    - id: review
-      uses: anthropics/claude-code-action@v1
-      with:
-        claude_code_oauth_token: ${{ inputs.claude_code_oauth_token }}
-        prompt: ${{ inputs.prompt }}
-        claude_args: >-
-          --model claude-opus-5-5
-          --allowed-tools "${{ inputs.allowed_tools }}"
-          --disallowed-tools "Agent,Task"
-
-    # Runs only when the reviewer never ran: a normal run always sets
-    # `conclusion`, and a failed review skips it via success().
-    - id: skip-check
-      if: success() && steps.review.outputs.conclusion == '' && steps.review.outputs.execution_file == ''
+    - id: cli
       shell: bash
       env:
         ACTION_PATH: ${{ github.action_path }}
-        GITHUB_TOKEN_FOR_CHECK: ${{ github.token }}
-        REPOSITORY: ${{ github.repository }}
-        WORKFLOW_REF: ${{ github.workflow_ref }}
-        WORKFLOW_SHA: ${{ github.workflow_sha || github.sha }}
-        DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-        PROMPT_PRESENT: ${{ inputs.prompt != '' }}
-      run: node "$ACTION_PATH/detect-workflow-validation-skip.mjs"
+        NODE_OPTIONS: ''
+        BASH_ENV: ''
+      run: node "$ACTION_PATH/install-claude.mjs"
+    - id: review
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        CLAUDE_EXECUTABLE: ${{ steps.cli.outputs.executable }}
+        CLAUDE_CODE_OAUTH_TOKEN: ${{ inputs.claude_code_oauth_token }}
+        PR_NUMBER: ${{ inputs.pr_number }}
+        REVIEWED_HEAD_SHA: ${{ inputs.reviewed_head_sha }}
+        PRODUCER_SHA: ${{ github.workflow_sha }}
+        NODE_OPTIONS: ''
+        BASH_ENV: ''
+      run: node "$ACTION_PATH/run-review.mjs"

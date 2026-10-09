@@ -18,8 +18,7 @@ export const FAILURE_CLASSES = Object.freeze([
   // workflow. classifyMessages never returns it.
   "workflow-modified",
   "reviewer-errored",
-  // Workflow-derived only: the verify/fallback steps emit never-posted when a
-  // completed run left no valid comment. classifyMessages never returns it.
+  // Typed text-review results and legacy workflow verification can emit this.
   "never-posted",
   "startup-failure",
   "unknown",
@@ -134,6 +133,17 @@ export function classifyMessages(messages) {
 }
 
 export function classifyExecutionFile({ actionOutcome, fileContent, skipMarker = null }) {
+  if (typeof fileContent === "string") {
+    try {
+      const envelope = JSON.parse(fileContent);
+      if (isRecord(envelope) && !Array.isArray(envelope)) {
+        if (envelope.version !== 1) return "unknown";
+        if (!FAILURE_CLASSES.includes(envelope.failure_class)) return "unknown";
+        if (envelope.failure_class === "completed" && actionOutcome !== "success") return "reviewer-errored";
+        return envelope.failure_class;
+      }
+    } catch {}
+  }
   if (actionOutcome === "success") {
     return "completed";
   }
