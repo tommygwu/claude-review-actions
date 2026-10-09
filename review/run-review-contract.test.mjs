@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -292,6 +293,36 @@ test("producer and poster remove plain URL credentials from PR fields and return
   assert.equal((await reviewAndPost({ env, root: "/unused", ...f })).failure_class, "completed");
   assert.equal(f.counts().models, 1);
   assert.equal(f.counts().posts, 1);
+});
+
+test("multiple-at URL userinfo cannot enter prepared data, CLI stdin, or posted review", async () => {
+  const pieces = ["USER", "PREFIX", "SECRET_SUFFIX"].map(label => `GENERATED_${label}_${randomUUID()}`);
+  const url = `https://${pieces[0]}:${pieces[1]}@${pieces[2]}@example.invalid/path`;
+  const assertRedacted = text => {
+    for (const piece of pieces) assert.ok(!text.includes(piece));
+    assert.ok(text.includes("@example.invalid/path"));
+  };
+  const f = fixture({
+    metadata: { title: url, body: url }, diff: diff.replace("-old", `-${url}`), text: url,
+    inspectData: prepared => {
+      for (const field of ["title", "body", "diff"]) assertRedacted(prepared[field]);
+    },
+    inspectBody: assertRedacted,
+  });
+  assert.equal((await reviewAndPost({ env, root: "/unused", ...f })).failure_class, "completed");
+  assert.equal(f.counts().posts, 1);
+  await withRoot(async root => {
+    let stdin = "";
+    await runModel({ executable: env.CLAUDE_EXECUTABLE, data: { ...data, title: url, body: url, diff: diff.replace("-old", `-${url}`) }, oauthToken: "fake-oauth", root,
+      spawnImpl: (...args) => {
+        const child = childProcess([init, success])(...args);
+        child.stdin.on("data", chunk => { stdin += chunk; });
+        return child;
+      },
+    });
+    const input = JSON.parse(stdin);
+    for (const field of ["title", "body", "diff"]) assertRedacted(input[field]);
+  });
 });
 
 for (const field of ["GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT"]) {

@@ -40,7 +40,7 @@ function redactText(text) {
       if (/^https?[:%\\]/i.test(value)) throw new ReviewError("reviewer-errored", "URL text cannot be redacted safely; use a human review");
       return value;
     }
-    const url = value.replace(/^(https?:\/\/)[^/?#@]+@/i, "$1[REDACTED_CREDENTIAL]@");
+    const url = value.replace(/^(https?:\/\/)[^/?#]*@/i, "$1[REDACTED_CREDENTIAL]@");
     const query = url.search(/[?#]/);
     if (/[%\\]/.test(query === -1 ? url : url.slice(0, query))) throw new ReviewError("reviewer-errored", "URL text cannot be redacted safely; use a human review");
     return query === -1 ? url : `${url.slice(0, query)}?[REDACTED_QUERY]`;
