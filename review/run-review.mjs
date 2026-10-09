@@ -95,12 +95,14 @@ function redactText(text) {
   const network = [...shadow.text.matchAll(/(?:https?|wss?|ftp):/gi)];
   const other = [...shadow.text.matchAll(/[a-z][a-z0-9+.-]*:\/\//gi)].filter(match => !/(?:https?|wss?|ftp):\/\//i.test(match[0]));
   const matches = [...network, ...other].sort((a, b) => a.index - b.index);
-  let consumed = 0;
+  let consumed = 0, unquotedEnd = 0;
   for (let index = 0; index < matches.length; index++) {
     const match = matches[index], next = matches[index + 1];
     const start = shadow.starts[match.index];
     if (start < consumed) continue;
-    const rawEnd = sourceURLend(text, start);
+    const quoted = ['"', "'", "`"].includes(text[start - 1]);
+    const rawEnd = !quoted && start < unquotedEnd ? unquotedEnd : sourceURLend(text, start);
+    if (!quoted) unquotedEnd = rawEnd;
     const nextStart = next ? shadow.starts[next.index] : rawEnd;
     let end = nextStart > start && nextStart < rawEnd ? nextStart : rawEnd;
     let shadowEnd = match.index;
