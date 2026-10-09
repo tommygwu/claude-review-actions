@@ -236,9 +236,26 @@ test("hung CLI is killed and cannot become a completed review", async t => {
   });
 });
 
+const sourceEncoders = [
+  ["Unicode four-digit", char => `\\u${char.codePointAt(0).toString(16).padStart(4, "0")}`],
+  ["Unicode code-point", char => `\\u{${char.codePointAt(0).toString(16)}}`],
+  ["hex source", char => `\\x${char.codePointAt(0).toString(16)}`],
+  ["percent", char => `%${char.codePointAt(0).toString(16)}`],
+];
+const encodedSchemes = sourceEncoders.flatMap(([label, encode]) => [
+  [`fully ${label} encoded scheme`, [..."https"].map(encode).join("")],
+  [`first ${label} encoded scheme character`, `${encode("h")}ttps`],
+  [`middle ${label} encoded scheme`, `ht${encode("t")}ps`],
+]);
+for (const [label, first] of [
+  ["HTML decimal", "&#104;"], ["HTML hex", "&#x68;"],
+  ["semicolonless HTML decimal", "&#104"], ["semicolonless HTML hex", "&#x68"],
+]) encodedSchemes.push([`${label} encoded first scheme character`, `${first}ttps`]);
+const encodedSecret = `GENERATED_ONLY_SECRET_${randomUUID()}`;
 const ambiguousURLs = [
-  ["source-escaped query delimiter", "https://example.invalid/runbook\\u003ftoken=GENERATED_ONLY_SECRET"],
-  ["multiply percent encoded query", "https://example.invalid/runbook%25253Ftoken%25253DGENERATED_ONLY_SECRET"],
+  ...encodedSchemes.map(([label, scheme]) => [label, `${scheme}://example.invalid/runbook?token=${encodedSecret}`]),
+  ["source-escaped query delimiter", `https://example.invalid/runbook\\u003ftoken=${encodedSecret}`],
+  ["multiply percent encoded query", `https://example.invalid/runbook%25253Ftoken%25253D${encodedSecret}`],
 ];
 
 for (const [label, url] of ambiguousURLs) {
@@ -293,6 +310,39 @@ test("producer and poster remove plain URL credentials from PR fields and return
   assert.equal((await reviewAndPost({ env, root: "/unused", ...f })).failure_class, "completed");
   assert.equal(f.counts().models, 1);
   assert.equal(f.counts().posts, 1);
+});
+
+test("encoded values removed from a plain URL query do not block review or reach CLI stdin or a comment", async () => {
+  const secret = `GENERATED_QUERY_SECRET_${randomUUID()}`;
+  const url = `https://example.invalid/path?token=${secret}\\u0068%68&#104;&#x68&amp;#${secret}`;
+  const assertRedacted = text => {
+    assert.ok(!text.includes(secret));
+    assert.ok(text.includes("https://example.invalid/path?[REDACTED_QUERY]"));
+    for (const encoded of ["\\u0068", "%68", "&#104;", "&#x68", "&amp;"]) assert.ok(!text.includes(encoded));
+  };
+  const f = fixture({
+    metadata: { title: url, body: url }, diff: diff.replace("-old", `-${url}`), text: url,
+    inspectData: prepared => {
+      for (const field of ["title", "body", "diff"]) assertRedacted(prepared[field]);
+    },
+    inspectBody: assertRedacted,
+  });
+  assert.equal((await reviewAndPost({ env, root: "/unused", ...f })).failure_class, "completed");
+  assert.equal(f.counts().models, 1);
+  assert.equal(f.counts().posts, 1);
+  await withRoot(async root => {
+    let stdin = "";
+    const result = await runModel({ executable: env.CLAUDE_EXECUTABLE, data: { ...data, title: url, body: url, diff: diff.replace("-old", `-${url}`) }, oauthToken: "fake-oauth", root,
+      spawnImpl: (...args) => {
+        const child = childProcess([init, success])(...args);
+        child.stdin.on("data", chunk => { stdin += chunk; });
+        return child;
+      },
+    });
+    assert.equal(result, success.result);
+    const input = JSON.parse(stdin);
+    for (const field of ["title", "body", "diff"]) assertRedacted(input[field]);
+  });
 });
 
 test("multiple-at URL userinfo cannot enter prepared data, CLI stdin, or posted review", async () => {

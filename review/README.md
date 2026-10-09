@@ -52,8 +52,10 @@ URL user credentials and all URL query/fragment values in title, body, and diff
 are replaced with markers before the model runs. This includes deletion lines
 for historical credential URLs. The same redaction runs before posting review
 text. Only token-free path context remains; hidden query values cannot be
-reviewed by the model. Ambiguous URL encoding fails for human review without
-logging the source value.
+reviewed by the model. After plain URL redaction, remaining Unicode/hex source
+escapes, percent encodings, or HTML entities fail for human review without
+logging source values. This also refuses benign encoded fixtures; source is
+never recursively decoded to guess whether it hides a credential URL.
 
 The CLI is pinned to 2.1.295 with platform archive SHA-512 integrity. It runs in
 a new empty HOME and working directory outside the checkout, with a fixed

@@ -35,7 +35,7 @@ export function cliOptions(home, oauthToken) {
 }
 
 function redactText(text) {
-  return text.replace(/https?[^\s<>"'`]+/gi, value => {
+  const redacted = text.replace(/https?[^\s<>"'`]+/gi, value => {
     if (!/^https?:\/\//i.test(value)) {
       if (/^https?[:%\\&]/i.test(value)) throw new ReviewError("reviewer-errored", "URL text cannot be redacted safely; use a human review");
       return value;
@@ -45,6 +45,10 @@ function redactText(text) {
     if (/[%\\&]/.test(query === -1 ? url : url.slice(0, query))) throw new ReviewError("reviewer-errored", "URL text cannot be redacted safely; use a human review");
     return query === -1 ? url : `${url.slice(0, query)}?[REDACTED_QUERY]`;
   });
+  if (/(?:\\(?:u(?:[a-f0-9]{4}|\{[a-f0-9]+\})|x[a-f0-9]{2})|%[a-f0-9]{2}|&(?:#[0-9]+;?|#x[a-f0-9]+;?|[a-z][a-z0-9]+;))/i.test(redacted)) {
+    throw new ReviewError("reviewer-errored", "Encoded source cannot be checked safely for credential URLs; use a human review");
+  }
+  return redacted;
 }
 
 function redactReviewData(data) {
