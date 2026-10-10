@@ -1,8 +1,7 @@
 name: Claude PR review
 description: >-
   Run anthropics/claude-code-action as a PR reviewer with the fleet's shared
-  model and review defaults. The caller owns the prompt and the tool allowlist,
-  because those differ per repository.
+  model and review defaults. The caller owns the prompt and additional tools.
 
 inputs:
   claude_code_oauth_token:
@@ -16,6 +15,12 @@ inputs:
       Comma-separated Claude Code permission rules, passed as --allowed-tools.
       They add to the action's read-only base tool set.
     required: true
+  review_file:
+    description: >-
+      Optional repository-root filename for the review body. Prepares a regular
+      file and grants access through an anchored Edit rule, including Write.
+    required: false
+    default: ''
 
 outputs:
   execution_file:
@@ -35,6 +40,14 @@ outputs:
 runs:
   using: composite
   steps:
+    - id: permissions
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        ALLOWED_TOOLS: ${{ inputs.allowed_tools }}
+        REVIEW_FILE: ${{ inputs.review_file }}
+      run: node "$ACTION_PATH/prepare-review-permissions.mjs"
+
     # Subagent tools are disallowed: they run in the background in a headless
     # runner, nothing re-invokes the parent, and a reviewer that ends its turn
     # "waiting" ends the run with nothing posted (hcos PR #3247, run
@@ -47,7 +60,7 @@ runs:
         prompt: ${{ inputs.prompt }}
         claude_args: >-
           --model claude-opus-5-5
-          --allowed-tools "${{ inputs.allowed_tools }}"
+          --allowed-tools "${{ steps.permissions.outputs.allowed_tools }}"
           --disallowed-tools "Agent,Task"
 
     # Runs only when the reviewer never ran: a normal run always sets
