@@ -7,6 +7,8 @@ change is one edit here plus a `v1` tag move.
 ## What this action owns
 
 - The model: `--model claude-opus-5-5`.
+- With `review_file`, prepare a regular root file and grant `Edit(/<filename>)` at the session's initial directory, including Write calls.
+- Reject a review-file directory or symlink before Claude starts; the regular file prevents the path rule from granting a writable subtree.
 - `--disallowed-tools "Agent,Task"`. Subagents run in the background in a
   headless runner and nothing re-invokes the parent, so a reviewer that ends its
   turn "waiting" posts nothing.
@@ -17,9 +19,8 @@ change is one edit here plus a `v1` tag move.
 
 - The prompt. Review focus, output format, and the run marker are specific to
   each repository.
-- The tool allowlist. Repositories grant different `gh`, shell, and `Edit(path)`
-  rules, and some compute them per run (for example, a dry-run that omits
-  `gh pr comment`).
+- Additional tools and whether to supply `review_file`.
+- The review prompt uses the same root filename as `review_file`; callers start the action at `GITHUB_WORKSPACE`.
 - The token, because a composite action cannot read secrets.
 - Step `env:`. Variables set on the calling step reach the reviewer's shell, so
   a prompt can refer to them.
@@ -35,7 +36,8 @@ change is one edit here plus a `v1` tag move.
         uses: tommygwu/claude-review-actions/review@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          allowed_tools: "Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr comment:*),Bash(cat:*),Edit(review.md)"
+          review_file: review.md
+          allowed_tools: "Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr comment:*),Bash(cat:*)"
           prompt: |
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
@@ -97,6 +99,7 @@ This action detects the skip in a step after the review:
 | `claude_code_oauth_token` | yes | `secrets.CLAUDE_CODE_OAUTH_TOKEN`. |
 | `prompt` | yes | The complete review prompt. |
 | `allowed_tools` | yes | Comma-separated permission rules passed as `--allowed-tools`. They add to the action's read-only base tool set. Must not contain a double quote. |
+| `review_file` | no | One repository-root filename, starting with a letter or digit and containing only letters, digits, `.`, `_`, or `-`. Prepares a regular file and adds `Edit(/<filename>)`; empty adds no file or permission. |
 
 ## Output
 
