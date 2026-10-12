@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+set -euo pipefail
+"$HOME/.agents/skills/provision-host/scripts/staged_secret_scan.py" claude-review-actions || exit $?
