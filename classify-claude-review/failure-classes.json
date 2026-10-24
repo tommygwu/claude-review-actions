@@ -11,12 +11,12 @@
     "unknown"
   ],
   "descriptions": {
-    "completed": "The reviewer finished. Comment verification follows.",
+    "completed": "The review step outcome was success. This does not prove the reviewer ran or posted a comment; the caller verifies comment delivery.",
     "out-of-usage": "The provider rejected the run for usage limits. Terminal: a rerun hits the same wall until usage resets.",
     "auth-failed": "Provider authentication failed. Terminal: repair the credential; reruns cannot fix it.",
-    "workflow-modified": "claude-code-action skipped the review by design because this PR modifies the review workflow. Terminal: reruns cannot fix it. The review runs on the next PR after merge; a maintainer reviews the workflow change by hand.",
+    "workflow-modified": "Missing or empty execution output and a workflow-modified skip marker: the review action found a different or unverified workflow blob with a non-empty prompt. Reruns do not repair a workflow mismatch; an unverified comparison is an inference, not a confirmed difference.",
     "reviewer-errored": "The reviewer ran (real turns and cost recorded) but errored before finishing. Transient: a rerun should succeed.",
-    "never-posted": "Workflow-derived, never emitted by the classifier: a completed run left no valid review comment.",
+    "never-posted": "Workflow-derived, never emitted by the classifier: caller verification found no review comment after a successful step or completed classification.",
     "startup-failure": "No classifiable execution output. Not proof the reviewer never started: usage exhaustion, a cancelled step, or a failed execution-file write look the same.",
     "unknown": "No classifiable evidence, for example an unparseable execution file."
   }
