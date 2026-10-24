@@ -1,109 +1,72 @@
 # review
 
-Composite action that runs [`anthropics/claude-code-action`](https://github.com/anthropics/claude-code-action)
-as a PR reviewer. It owns the settings every repository shares, so a model
-change is one edit here plus a `v1` tag move.
-
-## What this action owns
-
-- The model: `--model claude-opus-5-5`.
-- With `review_file`, prepare a regular root file and grant `Edit(/<filename>)` at the session's initial directory, including Write calls.
-- Reject a review-file directory or symlink before Claude starts; the regular file prevents the path rule from granting a writable subtree.
-- `--disallowed-tools "Agent,Task"`. Subagents run in the background in a
-  headless runner and nothing re-invokes the parent, so a reviewer that ends its
-  turn "waiting" posts nothing.
-- Workflow-validation skip detection. See
-  [When the PR modifies the review workflow](#when-the-pr-modifies-the-review-workflow).
-
-## What the caller owns
-
-- The prompt. Review focus, output format, and the run marker are specific to
-  each repository.
-- Additional tools and whether to supply `review_file`.
-- The review prompt uses the same root filename as `review_file`; callers start the action at `GITHUB_WORKSPACE`.
-- The token, because a composite action cannot read secrets.
-- Step `env:`. Variables set on the calling step reach the reviewer's shell, so
-  a prompt can refer to them.
-- Step-level `continue-on-error`, the classifier, and comment verification.
-  With `continue-on-error`, read `steps.<id>.outcome` (it is `failure` on a
-  detected skip), not `conclusion`.
+Composite action that runs [`anthropics/claude-code-action@v1`](https://github.com/anthropics/claude-code-action) for PR reviews.
+It selects `--model claude-opus-5-5` and disables `Agent,Task` tools because background subagents can leave the headless reviewer waiting without posting.
 
 ## Usage
 
 ```yaml
       - name: Run Claude Code Review
         id: claude-review
+        continue-on-error: true
         uses: tommygwu/claude-review-actions/review@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           review_file: review.md
           allowed_tools: "Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr comment:*),Bash(cat:*)"
           prompt: |
-            REPO: ${{ github.repository }}
-            PR NUMBER: ${{ github.event.pull_request.number }}
-            ...
+            Review PR ${{ github.event.pull_request.number }} in ${{ github.repository }}.
+            Write the review to review.md and post it as a PR comment.
 
       - name: Classify review outcome
         id: classify
         if: ${{ !cancelled() }}
+        continue-on-error: true
         uses: tommygwu/claude-review-actions/classify-claude-review@v1
         with:
           execution_file: ${{ steps.claude-review.outputs.execution_file }}
           action_outcome: ${{ steps.claude-review.outcome }}
 ```
 
-Run classify with `if: ${{ !cancelled() }}`, not only when the review step
-failed. It returns `completed` for a successful review, so its `class` output is
-always set, and an empty class then really means the classify wiring is broken.
-A condition on the review outcome makes an empty class ambiguous: it can also
-mean classify was skipped.
+These steps run the reviewer and collect diagnostics; the caller then checks whether a `claude[bot]` comment was posted.
+Claude review is best-effort: that comment counts as success; red means no comment was posted.
+`continue-on-error` lets the caller reach comment verification after an action failure; use `outcome` for classification because `conclusion` can become `success`.
+For classifier conditions, failure classes, and log-marker names, see its [public contract](../classify-claude-review/README.md).
 
-The job still needs the permissions `claude-code-action` requires, including
-`id-token: write` and `pull-requests: write` to post the comment, plus
-`contents: read`, which the skip detection uses to read the workflow file.
-
-## When the PR modifies the review workflow
-
-`claude-code-action` refuses to run when the running workflow file differs from
-the copy on the default branch. It logs "Workflow validation failed", skips the
-review, and **exits success** with no execution file. It records the skip in an
-inner output that its root action does not expose, so without help the skip is
-invisible: the review step is green and nothing is posted.
-
-This action detects the skip in a step after the review:
-
-1. **Gate.** The step runs only when the review succeeded but set neither
-   `conclusion` nor `execution_file`. Every real run sets `conclusion`, so the
-   step never runs on a normal review. With a non-empty prompt, the only
-   upstream path to this state is the validation skip.
-2. **Confirm.** It takes the running workflow path from `github.workflow_ref`
-   and compares the file's blob at `github.workflow_sha` with the blob on the
-   default branch. It reads the running blob from the local checkout first and
-   falls back to the GitHub contents API when the checkout is shallow or absent.
-   The default branch always goes through the API, because a local
-   remote-tracking ref can be stale.
-3. **Report.** It sets `skip_reason`, writes a marker to
-   `$RUNNER_TEMP/claude-review-skip.json`, prints an `::error::`, and exits
-   non-zero, so the step outcome is `failure` and a
-   `steps.claude-review.outcome != 'success'` condition fires.
-
-| `skip_reason` | Meaning |
-|---|---|
-| `workflow-modified` | The workflow file differs from the default branch, or the diff could not be read (the gate already proves the skip). By design: reruns cannot fix it. The review runs on the next PR after this one merges; a maintainer reviews the workflow change by hand. `classify-claude-review` reads the marker and returns `workflow-modified`. |
-| `not-executed` | The action returned success without running, but the workflow file matches the default branch (or the prompt was empty). Cause unknown. `classify-claude-review` returns `startup-failure`. |
+The caller owns the prompt, token, additional tools, step environment, and comment verification.
+With `review_file`, start the action at `GITHUB_WORKSPACE` and use that same root filename in the prompt.
+Grant the permissions required by upstream, plus `contents: read` for workflow-skip detection.
 
 ## Inputs
 
 | Input | Required | Description |
 |---|---|---|
-| `claude_code_oauth_token` | yes | `secrets.CLAUDE_CODE_OAUTH_TOKEN`. |
-| `prompt` | yes | The complete review prompt. |
-| `allowed_tools` | yes | Comma-separated permission rules passed as `--allowed-tools`. They add to the action's read-only base tool set. Must not contain a double quote. |
-| `review_file` | no | One repository-root filename, starting with a letter or digit and containing only letters, digits, `.`, `_`, or `-`. Prepares a regular file and adds `Edit(/<filename>)`; empty adds no file or permission. |
+| `claude_code_oauth_token` | yes | Claude Code OAuth token. |
+| `prompt` | yes | Complete review prompt. |
+| `allowed_tools` | yes | Comma-separated permission rules passed as `--allowed-tools`, in addition to upstream's base tools; one line with no double quotes or CR/LF. |
+| `review_file` | no | Root filename that starts with a letter or digit and contains only letters, digits, `.`, `_`, or `-`; empty adds no file or permission. |
 
-## Output
+`review_file` adds `Edit(/<filename>)`, including Write access, at the initial directory.
+The action creates a missing file with mode `0600`, preserves an existing regular file, and rejects a directory or symlink before Claude starts.
+
+## Outputs
 
 | Output | Description |
 |---|---|
-| `execution_file` | The `claude-code-action` execution file, for `classify-claude-review`. |
-| `skip_reason` | `workflow-modified` or `not-executed` when the reviewer did not run; empty on every normal run. |
+| `execution_file` | Upstream execution-file path, passed to the classifier. |
+| `skip_reason` | `workflow-modified` or `not-executed` when the skip check runs; otherwise empty. |
+
+## Workflow-skip detection
+
+The skip check runs after an upstream success with neither `conclusion` nor `execution_file`.
+It compares the running workflow blob at `github.workflow_sha` (or `github.sha`) with the default branch.
+It reads the running blob locally, with a GitHub API fallback, and always reads the default-branch blob through the API to avoid a stale local ref.
+
+| `skip_reason` | Detection rule |
+|---|---|
+| `workflow-modified` | Non-empty prompt and a different or unverified workflow blob. This represents the upstream workflow-validation skip; reruns do not repair a workflow mismatch. |
+| `not-executed` | Empty prompt or identical workflow blobs. Read the upstream step log for the cause. |
+
+Either result writes `$RUNNER_TEMP/claude-review-skip.json`, sets `skip_reason`, prints an error annotation, and fails the action.
+The classifier reads that marker when execution output is missing or empty.
+An unverified comparison is an inference from the upstream output shape, not a confirmed file difference.

@@ -1,21 +1,14 @@
 # claude-review-actions
 
-Shared GitHub composite actions for [`claude-code-action`](https://github.com/anthropics/claude-code-action)
-PR-review workflows.
+Shared GitHub composite actions for [`anthropics/claude-code-action`](https://github.com/anthropics/claude-code-action) PR reviews.
 
-| Action | Purpose |
+| Action | Public contract |
 |---|---|
-| [`review`](./review) | Run `claude-code-action` as a PR reviewer with the fleet's shared model and review defaults. |
-| [`classify-claude-review`](./classify-claude-review) | Derive a closed-vocabulary failure class from the review action's `execution_file`, so a red check says *why* it is red. |
+| [`review`](review/README.md) | Run the reviewer with shared model, tool permissions, and workflow-skip detection. |
+| [`classify-claude-review`](classify-claude-review/README.md) | Classify execution evidence and emit a failure marker for caller diagnostics. |
 
-Each action directory carries its own README, and any tests or data artifacts it
-publishes as a contract.
+Claude review is best-effort: a posted `claude[bot]` comment counts as success; red means no comment was posted.
+The caller checks comment delivery; action outcomes and failure classes alone do not prove delivery.
 
-`v1` moves as compatible changes ship. After a change merges, move the tag to
-the merge commit: `git tag -f v1 origin/main && git push -f origin v1`.
-
-## Verifying
-
-```bash
-node scripts/validate.mjs full
-```
+`v1` tracks compatible releases; pin a full commit SHA to control updates.
+For maintenance and validation, see [AGENTS.md](AGENTS.md).
