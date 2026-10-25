@@ -12,7 +12,9 @@ Keep public inputs, outputs, and failure semantics beside each action.
 Claude review is best-effort: a posted `claude[bot]` comment is success; red means no comment was posted.
 Classification supplies diagnostics; callers own comment verification.
 
-Use the Node version in `.node-version`; there are no dependencies to install.
+Use the Node and Python versions in `.node-version` and `.python-version`.
+Install test-only schema dependencies with `python3 -m pip install --require-hashes -r requirements-schema-tests.txt`.
+The capture action uses only the Python standard library.
 Run `bash "$HOME/.agents/skills/repository/action.sh" run --repo "$PWD" --scope changed` through the shared repository tools.
 For standalone validation with the pinned Node version, run `node scripts/validate.mjs full`.
 Both validation scopes run all action tests; CI runs `full`.

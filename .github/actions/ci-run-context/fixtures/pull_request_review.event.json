@@ -1,0 +1,23 @@
+{
+  "action": "submitted",
+  "pull_request": {
+    "number": 7,
+    "head": {
+      "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "repo": {
+        "full_name": "contributor/fork"
+      }
+    },
+    "base": {
+      "sha": "cccccccccccccccccccccccccccccccccccccccc",
+      "repo": {
+        "full_name": "example/widget"
+      }
+    },
+    "merge_commit_sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "body": "SYNTHETIC-SECRET-BODY"
+  },
+  "review": {
+    "body": "SYNTHETIC-SECRET-REVIEW"
+  }
+}

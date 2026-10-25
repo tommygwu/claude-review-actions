@@ -1,0 +1,10 @@
+{
+  "GITHUB_REPOSITORY": "example/widget",
+  "GITHUB_RUN_ID": "101",
+  "GITHUB_RUN_ATTEMPT": "3",
+  "GITHUB_SHA": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "GITHUB_REF": "refs/pull/7/merge",
+  "GITHUB_WORKFLOW_REF": "example/widget/.github/workflows/test.yml@refs/pull/7/merge",
+  "GITHUB_WORKFLOW_SHA": "dddddddddddddddddddddddddddddddddddddddd",
+  "GITHUB_EVENT_NAME": "push"
+}

@@ -1,0 +1,35 @@
+{
+  "action": "completed",
+  "workflow_run": {
+    "id": 202,
+    "run_attempt": 2,
+    "workflow_id": 303,
+    "head_sha": "ffffffffffffffffffffffffffffffffffffffff",
+    "pull_requests": [
+      {
+        "number": 7,
+        "head": {
+          "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "repo": {
+            "id": 1001,
+            "url": "https://api.github.com/repos/contributor/fork",
+            "name": "fork"
+          },
+          "ref": "feature/context"
+        },
+        "base": {
+          "sha": "cccccccccccccccccccccccccccccccccccccccc",
+          "repo": {
+            "id": 1002,
+            "url": "https://api.github.com/repos/example/widget",
+            "name": "widget"
+          },
+          "ref": "main"
+        },
+        "url": "https://api.github.com/repos/example/widget/pulls/7",
+        "id": 7001
+      }
+    ],
+    "name": "SYNTHETIC-SECRET-WORKFLOW"
+  }
+}

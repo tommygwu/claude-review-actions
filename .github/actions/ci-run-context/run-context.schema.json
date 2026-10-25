@@ -1,0 +1,212 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Allowlisted CI run event context",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "ci-run-context"
+    },
+    "version": {
+      "const": 1
+    },
+    "repository": {
+      "type": "string",
+      "maxLength": 200,
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$(?![\\s\\S])"
+    },
+    "run_id": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "capture_attempt": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "event": {
+      "type": "string",
+      "maxLength": 100
+    },
+    "action": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 100
+    },
+    "observed_at": {
+      "type": "string",
+      "maxLength": 50
+    },
+    "workflow_ref": {
+      "type": "string",
+      "maxLength": 1000
+    },
+    "workflow_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{40}$(?![\\s\\S])"
+    },
+    "actions_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{40}$(?![\\s\\S])"
+    },
+    "actions_ref": {
+      "type": "string",
+      "maxLength": 1000
+    },
+    "pull_request": {
+      "$ref": "#/$defs/pr"
+    },
+    "parent": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "run_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "run_attempt": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "workflow_id": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "head_sha": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-fA-F]{40}$(?![\\s\\S])"
+        },
+        "pull_requests": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pr"
+          },
+          "maxItems": 100
+        }
+      },
+      "required": [
+        "run_id",
+        "run_attempt",
+        "workflow_id",
+        "head_sha",
+        "pull_requests"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema",
+    "version",
+    "repository",
+    "run_id",
+    "capture_attempt",
+    "event",
+    "action",
+    "observed_at",
+    "workflow_ref",
+    "workflow_sha",
+    "actions_sha",
+    "actions_ref",
+    "pull_request",
+    "parent"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "pr": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "number": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "repository": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 200,
+          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$(?![\\s\\S])"
+        },
+        "head": {
+          "type": "object",
+          "properties": {
+            "sha": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[0-9a-fA-F]{40}$(?![\\s\\S])"
+            },
+            "repository": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 200,
+              "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$(?![\\s\\S])"
+            }
+          },
+          "required": [
+            "sha",
+            "repository"
+          ],
+          "additionalProperties": false
+        },
+        "base": {
+          "type": "object",
+          "properties": {
+            "sha": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[0-9a-fA-F]{40}$(?![\\s\\S])"
+            },
+            "repository": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 200,
+              "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$(?![\\s\\S])"
+            }
+          },
+          "required": [
+            "sha",
+            "repository"
+          ],
+          "additionalProperties": false
+        },
+        "merge_commit_sha": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-fA-F]{40}$(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "number",
+        "repository",
+        "head",
+        "base",
+        "merge_commit_sha"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
