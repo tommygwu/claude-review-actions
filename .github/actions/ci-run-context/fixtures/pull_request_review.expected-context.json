@@ -1,0 +1,28 @@
+{
+  "schema": "ci-run-context",
+  "version": 1,
+  "repository": "example/widget",
+  "run_id": 101,
+  "capture_attempt": 3,
+  "event": "pull_request_review",
+  "action": "submitted",
+  "observed_at": "2026-10-25T00:00:00Z",
+  "workflow_ref": "example/widget/.github/workflows/test.yml@refs/pull/7/merge",
+  "workflow_sha": "dddddddddddddddddddddddddddddddddddddddd",
+  "actions_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "actions_ref": "refs/pull/7/merge",
+  "pull_request": {
+    "number": 7,
+    "repository": "example/widget",
+    "head": {
+      "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "repository": "contributor/fork"
+    },
+    "base": {
+      "sha": "cccccccccccccccccccccccccccccccccccccccc",
+      "repository": "example/widget"
+    },
+    "merge_commit_sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  },
+  "parent": null
+}

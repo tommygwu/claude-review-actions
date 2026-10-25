@@ -1,0 +1,17 @@
+name: Capture CI run context
+description: Retain allowlisted event identity independently of job census.
+runs:
+  using: composite
+  steps:
+    - name: Capture event identity
+      shell: bash
+      env:
+        CI_CONTEXT_ACTION_PATH: ${{ github.action_path }}
+        GITHUB_WORKFLOW_REF: ${{ github.workflow_ref }}
+        GITHUB_WORKFLOW_SHA: ${{ github.workflow_sha }}
+      run: python3 "$CI_CONTEXT_ACTION_PATH/capture.py" "$RUNNER_TEMP/ci-run-context-${{ github.run_attempt }}/context.json"
+    - uses: actions/upload-artifact@v7
+      with:
+        name: ci-run-context-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/ci-run-context-${{ github.run_attempt }}/context.json
+        if-no-files-found: error

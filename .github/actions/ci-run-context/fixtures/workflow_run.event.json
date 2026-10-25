@@ -1,0 +1,32 @@
+{
+  "action": "completed",
+  "workflow_run": {
+    "id": 202,
+    "run_attempt": 2,
+    "workflow_id": 303,
+    "head_sha": "ffffffffffffffffffffffffffffffffffffffff",
+    "pull_requests": [
+      {
+        "number": 7,
+        "head": {
+          "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "repo": {
+            "full_name": "contributor/fork"
+          }
+        },
+        "base": {
+          "sha": "cccccccccccccccccccccccccccccccccccccccc",
+          "repo": {
+            "full_name": "example/widget"
+          }
+        },
+        "merge_commit_sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "body": "SYNTHETIC-SECRET-BODY"
+      },
+      {
+        "number": 8
+      }
+    ],
+    "name": "SYNTHETIC-SECRET-WORKFLOW"
+  }
+}
