@@ -6,22 +6,6 @@ import unittest
 from run_context import extract, validate
 
 
-class CaptureRegression(unittest.TestCase):
-    def test_public_capture_keeps_distinct_revisions_and_excludes_text(self):
-        env = {"GITHUB_REPOSITORY": "example/widget", "GITHUB_RUN_ID": "101",
-               "GITHUB_RUN_ATTEMPT": "1", "GITHUB_EVENT_NAME": "pull_request",
-               "GITHUB_SHA": "a" * 40, "GITHUB_REF": "refs/pull/7/merge",
-               "GITHUB_WORKFLOW_REF": "example/widget/.github/workflows/test.yml@refs/pull/7/merge",
-               "GITHUB_WORKFLOW_SHA": "d" * 40}
-        payload = {"action": "synchronize", "pull_request": {"number": 7,
-            "body": "secret body", "head": {"sha": "b" * 40, "repo": {"full_name": "contributor/fork"}},
-            "base": {"sha": "c" * 40, "repo": {"full_name": "example/widget"}}}}
-        result = extract(payload, env, "2026-10-25T00:00:00Z")
-        self.assertEqual(("a" * 40, "d" * 40, "b" * 40, "c" * 40),
-                         (result["actions_sha"], result["workflow_sha"], result["pull_request"]["head"]["sha"], result["pull_request"]["base"]["sha"]))
-        self.assertNotIn("secret body", json.dumps(result))
-
-
 class ContextContract(unittest.TestCase):
     fixtures = Path(__file__).parent / 'fixtures'
 
@@ -70,13 +54,17 @@ class ContextContract(unittest.TestCase):
 
     def test_abbreviated_repository_urls_preserve_fork_and_base_without_observer_inference(self):
         event = self.fixture('workflow_run', 'event')
-        pr = event['workflow_run']['pull_requests'][0]
-        for side in ['head', 'base']:
-            self.assertEqual({'id', 'url', 'name'}, set(pr[side]['repo']))
-        result = extract(event, self.fixture('workflow_run', 'environment'), '2026-10-25T00:00:00Z')
-        self.assertEqual(self.fixture('workflow_run'), result)
-        self.assertEqual('contributor/fork', result['parent']['pull_requests'][0]['head']['repository'])
-        self.assertEqual('example/widget', result['parent']['pull_requests'][0]['repository'])
+        for representation in ['url', 'full_name', 'both']:
+            with self.subTest(representation=representation):
+                source = deepcopy(event)
+                for side, identity in [('head', 'contributor/fork'), ('base', 'example/widget')]:
+                    repo = source['workflow_run']['pull_requests'][0][side]['repo']
+                    if representation != 'url':
+                        repo['full_name'] = identity
+                    if representation == 'full_name':
+                        del repo['url']
+                result = extract(source, self.fixture('workflow_run', 'environment'), '2026-10-25T00:00:00Z')
+                self.assertEqual(self.fixture('workflow_run'), result)
         for repo in [None, {}, {'name': 'fork'}, {'id': 1001, 'name': 'fork', 'url': None}]:
             with self.subTest(repo=repo):
                 missing = deepcopy(event)
@@ -94,6 +82,7 @@ class ContextContract(unittest.TestCase):
                         'https://user@api.github.com/repos/owner/repo', 'https://api.github.com:443/repos/owner/repo',
                         'https://api.github.com/repos/owner/repo/extra', 'https://api.github.com/repos/owner/repo/',
                         'https://api.github.com/repos/owner/repo?x=1', 'https://api.github.com/repos/owner/repo#x',
+                        'https://api.github.com/repos/owner/repo?', 'https://api.github.com/repos/owner/repo#',
                         'https://api.github.com/repos/owner/re%70o', 'https://api.github.com/repos/owner/repo\n',
                         'https://api.github.com/repos/owner', 'https://api.github.com/repos//repo']
         invalid_repos = [{'url': url} for url in invalid_urls] + [

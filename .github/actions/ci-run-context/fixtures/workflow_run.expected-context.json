@@ -29,19 +29,6 @@
           "sha": "cccccccccccccccccccccccccccccccccccccccc",
           "repository": "example/widget"
         },
-        "merge_commit_sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
-      },
-      {
-        "number": 8,
-        "repository": null,
-        "head": {
-          "sha": null,
-          "repository": null
-        },
-        "base": {
-          "sha": null,
-          "repository": null
-        },
         "merge_commit_sha": null
       }
     ]

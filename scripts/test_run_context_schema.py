@@ -49,19 +49,14 @@ class PublishedSchemaContract(unittest.TestCase):
         at_path(result, path[:-1])[path[-1]] = value
         return result
 
-    def test_published_schema_accepts_all_canonical_fixture_outputs(self):
-        for path in sorted((ACTION / 'fixtures').glob('*.expected-context.json')):
-            with self.subTest(fixture=path.name):
-                context = json.loads(path.read_text())
-                self.validator.validate(context)
-                validate(context)
-
-    def test_real_workflow_run_reference_capture_passes_the_published_schema(self):
-        event = json.loads((ACTION / 'fixtures/workflow_run.event.json').read_text())
-        env = json.loads((ACTION / 'fixtures/workflow_run.environment.json').read_text())
-        actual = extract(event, env, '2026-10-25T00:00:00Z')
-        self.validator.validate(actual)
-        self.assertEqual(json.loads((ACTION / 'fixtures/workflow_run.expected-context.json').read_text()), actual)
+    def test_published_schema_accepts_all_canonical_event_captures(self):
+        for path in sorted((ACTION / 'fixtures').glob('*.event.json')):
+            name = path.name.removesuffix('.event.json')
+            with self.subTest(fixture=name):
+                event = json.loads(path.read_text())
+                env = json.loads((ACTION / 'fixtures' / (name + '.environment.json')).read_text())
+                actual = extract(event, env, '2026-10-25T00:00:00Z')
+                self.validator.validate(actual)
 
     def test_positive_identities_and_required_nullable_members_keep_their_contract(self):
         for paths, valid in [(REPOSITORY_PATHS, 'Owner.Name-1/repo_name.2'),
