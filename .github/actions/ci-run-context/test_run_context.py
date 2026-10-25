@@ -49,7 +49,7 @@ class ContextContract(unittest.TestCase):
         self.assertEqual(event_before, event)
         self.assertEqual(env_before, env)
         frozen = deepcopy(result)
-        event['workflow_run']['pull_requests'][0]['head']['repo']['full_name'] = 'changed/source'
+        event['workflow_run']['pull_requests'][0]['head']['repo']['url'] = 'https://api.github.com/repos/changed/source'
         event.clear()
         env.clear()
         self.assertEqual(frozen, result)
@@ -67,6 +67,46 @@ class ContextContract(unittest.TestCase):
         result = extract(event, env, '2026-10-25T00:00:00Z')
         self.assertNotIn(secret, json.dumps(result))
         self.assertEqual(self.fixture('workflow_run'), result)
+
+    def test_abbreviated_repository_urls_preserve_fork_and_base_without_observer_inference(self):
+        event = self.fixture('workflow_run', 'event')
+        pr = event['workflow_run']['pull_requests'][0]
+        for side in ['head', 'base']:
+            self.assertEqual({'id', 'url', 'name'}, set(pr[side]['repo']))
+        result = extract(event, self.fixture('workflow_run', 'environment'), '2026-10-25T00:00:00Z')
+        self.assertEqual(self.fixture('workflow_run'), result)
+        self.assertEqual('contributor/fork', result['parent']['pull_requests'][0]['head']['repository'])
+        self.assertEqual('example/widget', result['parent']['pull_requests'][0]['repository'])
+        for repo in [None, {}, {'name': 'fork'}, {'id': 1001, 'name': 'fork', 'url': None}]:
+            with self.subTest(repo=repo):
+                missing = deepcopy(event)
+                for side in ['head', 'base']:
+                    missing['workflow_run']['pull_requests'][0][side]['repo'] = repo
+                context = extract(missing, self.fixture('workflow_run', 'environment'), '2026-10-25T00:00:00Z')
+                actual = context['parent']['pull_requests'][0]
+                self.assertIsNone(actual['repository'])
+                self.assertIsNone(actual['head']['repository'])
+                self.assertIsNone(actual['base']['repository'])
+
+    def test_repository_urls_reject_malformed_unsupported_and_conflicting_identity(self):
+        invalid_urls = [True, 42, '', 'http://api.github.com/repos/owner/repo',
+                        'https://example.test/repos/owner/repo', 'https://api.github.com.evil.test/repos/owner/repo',
+                        'https://user@api.github.com/repos/owner/repo', 'https://api.github.com:443/repos/owner/repo',
+                        'https://api.github.com/repos/owner/repo/extra', 'https://api.github.com/repos/owner/repo/',
+                        'https://api.github.com/repos/owner/repo?x=1', 'https://api.github.com/repos/owner/repo#x',
+                        'https://api.github.com/repos/owner/re%70o', 'https://api.github.com/repos/owner/repo\n',
+                        'https://api.github.com/repos/owner', 'https://api.github.com/repos//repo']
+        invalid_repos = [{'url': url} for url in invalid_urls] + [
+            {'url': 'https://api.github.com/repos/owner/repo', 'full_name': 'other/repo'},
+            {'url': 'https://api.github.com/repos/owner/repo', 'name': 'other'},
+            {'url': 'https://api.github.com/repos/owner/repo', 'full_name': True}]
+        for repo in invalid_repos:
+            for side in ['head', 'base']:
+                with self.subTest(repo=repo, side=side):
+                    event = self.fixture('workflow_run', 'event')
+                    event['workflow_run']['pull_requests'][0][side]['repo'] = repo
+                    with self.assertRaisesRegex(ValueError, '^run-context-repository-(url-invalid|conflict)$'):
+                        extract(event, self.fixture('workflow_run', 'environment'), '2026-10-25T00:00:00Z')
 
     def test_missing_required_members_include_nullable_nested_members(self):
         original = self.rich_context()

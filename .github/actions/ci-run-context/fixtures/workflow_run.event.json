@@ -11,13 +11,17 @@
         "head": {
           "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
           "repo": {
-            "full_name": "contributor/fork"
+            "id": 1001,
+            "url": "https://api.github.com/repos/contributor/fork",
+            "name": "fork"
           }
         },
         "base": {
           "sha": "cccccccccccccccccccccccccccccccccccccccc",
           "repo": {
-            "full_name": "example/widget"
+            "id": 1002,
+            "url": "https://api.github.com/repos/example/widget",
+            "name": "widget"
           }
         },
         "merge_commit_sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",

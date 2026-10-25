@@ -8,7 +8,7 @@ from jsonschema import Draft202012Validator
 
 ACTION = Path(__file__).resolve().parents[1] / '.github/actions/ci-run-context'
 sys.path.insert(0, str(ACTION))
-from run_context import validate
+from run_context import extract, validate
 
 PR_PATHS = [('pull_request',), ('parent', 'pull_requests', 0)]
 REPOSITORY_PATHS = [('repository',)] + [
@@ -55,6 +55,13 @@ class PublishedSchemaContract(unittest.TestCase):
                 context = json.loads(path.read_text())
                 self.validator.validate(context)
                 validate(context)
+
+    def test_real_workflow_run_reference_capture_passes_the_published_schema(self):
+        event = json.loads((ACTION / 'fixtures/workflow_run.event.json').read_text())
+        env = json.loads((ACTION / 'fixtures/workflow_run.environment.json').read_text())
+        actual = extract(event, env, '2026-10-25T00:00:00Z')
+        self.validator.validate(actual)
+        self.assertEqual(json.loads((ACTION / 'fixtures/workflow_run.expected-context.json').read_text()), actual)
 
     def test_positive_identities_and_required_nullable_members_keep_their_contract(self):
         for paths, valid in [(REPOSITORY_PATHS, 'Owner.Name-1/repo_name.2'),

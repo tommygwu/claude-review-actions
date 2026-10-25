@@ -61,6 +61,21 @@ class CaptureCLI(unittest.TestCase):
                 self.assertNotIn(str(self.root), result.stderr)
                 self.assertFalse(self.output.exists())
 
+    def test_cli_repository_url_errors_do_not_disclose_payload_values_or_write_output(self):
+        for repo in [{'url': 'https://SYNTHETIC-PRIVATE-TOKEN@example.test/repos/owner/repo'},
+                     {'url': 'https://api.github.com/repos/owner/repo', 'full_name': 'SYNTHETIC-PRIVATE-TOKEN/repo'}]:
+            with self.subTest(repo=repo):
+                event = fixture('workflow_run')
+                event['workflow_run']['pull_requests'][0]['head']['repo'] = repo
+                self.event_path.write_text(json.dumps(event))
+                self.env.update(fixture('workflow_run', 'environment'))
+                result = self.capture()
+                self.assertNotEqual(0, result.returncode)
+                self.assertEqual('', result.stdout)
+                self.assertRegex(result.stderr.strip(), '^run-context-repository-(url-invalid|conflict)$')
+                self.assertNotIn('SYNTHETIC', result.stderr)
+                self.assertFalse(self.output.exists())
+
     def test_cli_missing_environment_or_event_path_is_safe_and_has_no_output(self):
         for field in ['GITHUB_EVENT_PATH', 'GITHUB_REPOSITORY', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'GITHUB_EVENT_NAME', 'GITHUB_WORKFLOW_REF', 'GITHUB_WORKFLOW_SHA', 'GITHUB_SHA', 'GITHUB_REF']:
             with self.subTest(missing=field):

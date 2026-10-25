@@ -33,7 +33,23 @@ def mapping(value):
 
 
 def repository(value):
-    return mapping(value).get("full_name")
+    value = mapping(value)
+    full_name = value.get("full_name")
+    url = value.get("url")
+    if url is None:
+        return full_name
+    if not isinstance(url, str):
+        raise ValueError("run-context-repository-url-invalid")
+    match = re.fullmatch(r"https://api\.github\.com/repos/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)", url)
+    if match is None:
+        raise ValueError("run-context-repository-url-invalid")
+    identity = match.group(1)
+    if full_name is not None and (not isinstance(full_name, str) or full_name.casefold() != identity.casefold()):
+        raise ValueError("run-context-repository-conflict")
+    name = value.get("name")
+    if name is not None and (not isinstance(name, str) or name.casefold() != identity.split("/")[1].casefold()):
+        raise ValueError("run-context-repository-conflict")
+    return full_name if full_name is not None else identity
 
 
 def revision(value):
