@@ -2,7 +2,7 @@
   "version": 1,
   "runtime": {"kind": "node", "version_source": ".node-version", "probe": ["node", "--version"]},
   "additional_runtimes": [{"kind": "python", "version_source": ".python-version", "probe": ["python3", "--version"]}],
-  "dependencies": {"required": true, "lockfile": "requirements-schema-tests.txt", "immutable_install": ["python3", "-m", "pip", "install", "--require-hashes", "-r", "requirements-schema-tests.txt"]},
+  "dependencies": {"required": true, "lockfile": "requirements-schema-tests.txt", "immutable_install": ["node", "scripts/validate.mjs", "setup"]},
   "validation": {"changed": ["node", "scripts/validate.mjs", "changed"], "full": ["node", "scripts/validate.mjs", "full"]},
   "capabilities": []
 }
