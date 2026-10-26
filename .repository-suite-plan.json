@@ -1,0 +1,105 @@
+{
+  "selections": {
+    "changed": [
+      "node-test",
+      "ci-run-context",
+      "ci-run-context-schema"
+    ],
+    "full": [
+      "node-test",
+      "ci-run-context",
+      "ci-run-context-schema"
+    ],
+    "optional": {}
+  },
+  "units": [
+    {
+      "id": "node-test",
+      "command": [
+        "bash",
+        "scripts/run-node-tests.sh"
+      ],
+      "inputs": [
+        "review",
+        "classify-claude-review",
+        "scripts/run-node-tests.sh"
+      ],
+      "dependencies": [],
+      "resource": {
+        "class": "unit"
+      },
+      "timeout_seconds": 120,
+      "cache": {
+        "environment": [
+          "PATH",
+          "NODE_OPTIONS",
+          "PYTHONPATH",
+          "PYTHONHOME",
+          "UV_PYTHON",
+          "SUITE_PLAN_HEAD_TREE"
+        ]
+      }
+    },
+    {
+      "id": "ci-run-context",
+      "command": [
+        "node",
+        "scripts/run-python.mjs",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        ".github/actions/ci-run-context",
+        "-p",
+        "test_*.py"
+      ],
+      "inputs": [
+        ".github/actions/ci-run-context",
+        "scripts/run-python.mjs"
+      ],
+      "dependencies": [],
+      "resource": {
+        "class": "unit"
+      },
+      "timeout_seconds": 120,
+      "cache": {
+        "environment": [
+          "PATH",
+          "NODE_OPTIONS",
+          "PYTHONPATH",
+          "PYTHONHOME",
+          "UV_PYTHON"
+        ]
+      }
+    },
+    {
+      "id": "ci-run-context-schema",
+      "command": [
+        "node",
+        "scripts/run-python.mjs",
+        "-B",
+        "scripts/test_run_context_schema.py"
+      ],
+      "inputs": [
+        ".github/actions/ci-run-context",
+        "scripts/test_run_context_schema.py",
+        "scripts/run-python.mjs"
+      ],
+      "dependencies": [],
+      "resource": {
+        "class": "unit"
+      },
+      "timeout_seconds": 120,
+      "cache": {
+        "environment": [
+          "PATH",
+          "NODE_OPTIONS",
+          "PYTHONPATH",
+          "PYTHONHOME",
+          "UV_PYTHON"
+        ]
+      }
+    }
+  ]
+}

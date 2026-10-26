@@ -26,6 +26,6 @@ jobs:
       - name: Install schema test dependencies
         env:
           UV_PYTHON: ${{ steps.python.outputs.python-path }}
-        run: node scripts/validate.mjs setup
+        run: node scripts/setup-schema-tests.mjs
       - name: Run declared full validation
-        run: node scripts/validate.mjs full
+        run: bash scripts/run-ci-checks.sh
