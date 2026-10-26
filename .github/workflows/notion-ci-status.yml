@@ -1,0 +1,77 @@
+name: Notion CI status
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, labeled]
+  workflow_run:
+    workflows: ['*', '!Notion CI status']
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+jobs:
+  initialize-notion-ci-status:
+    name: "Notion: initialize"
+    if: ${{ github.event_name == 'pull_request_target' && (github.event.action != 'labeled' || startsWith(github.event.label.name, 'notion:')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: notion-ci-status-initialize-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+    steps:
+      - name: Checkout trusted writer
+        uses: actions/checkout@v7
+        with:
+          repository: tommygwu/agents
+          ref: main
+          path: agents
+          persist-credentials: false
+          ssh-key: ${{ secrets.AGENTS_PACKAGE_DEPLOY_KEY }}
+
+      - name: Install declared Python runtime
+        uses: ./agents/.github/actions/mise-python
+        with:
+          version-file: agents/.python-version
+          working-directory: agents
+
+      - name: Clear prior CI status for current head
+        run: python3.14 -m openclaw_shared.notion_ci_status initialize
+        env:
+          PYTHONPATH: agents/packages/openclaw-shared/src
+          GITHUB_TOKEN: ${{ github.token }}
+          NOTION_INTEGRATION_TOKEN: ${{ secrets.NOTION_INTEGRATION_TOKEN }}
+
+  complete-notion-ci-status:
+    name: "Notion: complete"
+    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: notion-ci-status-${{ github.event.workflow_run.pull_requests[0] && github.event.workflow_run.pull_requests[0].number || github.event.workflow_run.head_sha }}
+      cancel-in-progress: false
+    steps:
+      - name: Checkout trusted writer
+        uses: actions/checkout@v7
+        with:
+          repository: tommygwu/agents
+          ref: main
+          path: agents
+          persist-credentials: false
+          ssh-key: ${{ secrets.AGENTS_PACKAGE_DEPLOY_KEY }}
+
+      - name: Install declared Python runtime
+        uses: ./agents/.github/actions/mise-python
+        with:
+          version-file: agents/.python-version
+          working-directory: agents
+
+      - name: Write terminal CI status for current head
+        run: python3.14 -m openclaw_shared.notion_ci_status complete
+        env:
+          PYTHONPATH: agents/packages/openclaw-shared/src
+          GITHUB_TOKEN: ${{ github.token }}
+          NOTION_INTEGRATION_TOKEN: ${{ secrets.NOTION_INTEGRATION_TOKEN }}
