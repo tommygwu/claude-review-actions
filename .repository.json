@@ -41,6 +41,8 @@
   "capabilities": [],
   "gates": {
     "shared": [
+      ".github/notion-ci-status.json",
+      ".github/workflows/notion-ci-status.yml",
       ".repository-suite-plan.json",
       "scripts/*",
       ".github/workflows/test.yml",
