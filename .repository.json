@@ -30,6 +30,9 @@
     "suite_plan": ".repository-suite-plan.json"
   },
   "capabilities": [],
+  "ci": {
+    "push": null
+  },
   "gates": {
     "shared": [
       ".github/notion-ci-status.json",
