@@ -27,16 +27,7 @@
     ]
   },
   "validation": {
-    "changed": [
-      "bash",
-      "scripts/validate.sh",
-      "changed"
-    ],
-    "full": [
-      "bash",
-      "scripts/validate.sh",
-      "full"
-    ]
+    "suite_plan": ".repository-suite-plan.json"
   },
   "capabilities": [],
   "gates": {
@@ -77,11 +68,5 @@
         ]
       }
     }
-  },
-  "ci": {
-    "validation": [
-      "bash",
-      "scripts/run-ci-checks.sh"
-    ]
   }
 }

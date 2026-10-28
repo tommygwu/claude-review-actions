@@ -33,5 +33,11 @@ jobs:
         env:
           UV_PYTHON: ${{ steps.python.outputs.python-path }}
         run: node scripts/setup-schema-tests.mjs
-      - name: Run declared full validation
-        run: bash scripts/run-ci-checks.sh
+      - name: Run Node tests
+        run: bash scripts/run-node-tests.sh
+      - name: Run CI context tests
+        if: always()
+        run: node scripts/run-python.mjs -B -m unittest discover -s .github/actions/ci-run-context -p 'test_*.py'
+      - name: Run CI context schema tests
+        if: always()
+        run: node scripts/run-python.mjs -B scripts/test_run_context_schema.py
