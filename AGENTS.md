@@ -17,10 +17,10 @@ Install test-only schema dependencies with `python3 -m pip install --require-has
 The capture action uses only the Python standard library.
 Run `bash "$HOME/.agents/skills/repository/action.sh" run --repo "$PWD" --scope changed` through the shared repository tools.
 Run full validation through the same shared command with `--scope full`.
-For standalone validation with the pinned runtimes, run `bash scripts/validate.sh full`.
+For standalone native checks with the pinned runtimes, run `bash scripts/run-ci-checks.sh`.
 Use `--only node-test`, `--only ci-run-context`, or `--only ci-run-context-schema` for focused reruns.
-Changed validation selects units from declared inputs; shared tooling changes select all three. Public CI runs the same three native checks through the declared CI alias, without access to the private toolkit.
-The shared toolkit defaults to `$HOME/.agents`; set `AGENTS_REPO` to use another checkout.
+Changed validation selects units from declared inputs; shared tooling changes select all three. Public CI runs the three plan unit commands without access to the private toolkit.
+The shared repository command owns toolkit selection.
 The plan owns selection, filtering, and pass replay. Setup only creates the pinned Python environment and installs hash-locked test dependencies.
 
 After a compatible change merges, release `v1` from the fetched merge commit: `git fetch origin main`, then `git tag -f v1 origin/main` and `git push -f origin v1`.
