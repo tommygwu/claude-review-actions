@@ -1,14 +1,12 @@
 name: Test
 
 on:
-  push:
-    branches: [main]
   pull_request:
     types: [opened, synchronize, reopened, closed]
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   test:
