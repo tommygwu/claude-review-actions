@@ -6,7 +6,7 @@ on:
     types: [opened, synchronize, reopened, labeled]
   workflow_run:
     workflows: ['*', '!Notion CI status']
-    types: [completed]
+    types: [in_progress, completed]
 
 permissions:
   actions: read
@@ -47,7 +47,7 @@ jobs:
 
   complete-notion-ci-status:
     name: "Notion: complete"
-    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request' }}
+    if: ${{ github.event_name == 'workflow_run' && github.event.action == 'completed' && github.event.workflow_run.event == 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     concurrency:
