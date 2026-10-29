@@ -32,6 +32,7 @@ Claude review is best-effort: a `claude[bot]` comment created in this run's wind
 Keep the job name `claude-review` and the step name `Verify a review comment was posted`.
 `gh run view --log-failed` attributes a composite action's output to the calling step, and the claude-review-verdict consumer trusts only that job and step.
 Never set `continue-on-error` on this step: it turns the step green and drops the marker from `--log-failed`.
+Give every later step in the job `continue-on-error: true`, so only this step can turn a posted review red.
 `continue-on-error` on the review step is required, so the review's `outcome` stays raw and this step owns the job's only red condition.
 
 ## Inputs and output
@@ -45,6 +46,7 @@ Never set `continue-on-error` on this step: it turns the step green and drops th
 | `head_sha` | yes | The reviewed head SHA. |
 | `github_token` | yes | A token that can list the PR's issue comments. |
 | `pr_number` | no | Defaults to `github.event.pull_request.number`. |
+| `expect_comment` | no | `"false"` for a dry run that renders instead of posting; the action then passes without verifying. Default `"true"`. |
 
 The output `class` is empty when a comment was verified; otherwise it holds the failure class.
 

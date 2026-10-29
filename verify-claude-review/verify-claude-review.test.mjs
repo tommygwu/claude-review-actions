@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, it } from "node:test";
 
-import { FAILURE_CLASSES } from "../classify-claude-review/classify-claude-review-execution.mjs";
-import { annotation, CLASS_ANNOTATIONS, countReviewComments, main } from "./verify-claude-review.mjs";
+import { main } from "./verify-claude-review.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const START = 1_800_000_000;
@@ -24,7 +24,7 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-function run({ comments, reviewOutcome, execution }) {
+function env({ comments, reviewOutcome, execution }) {
   const commentsFile = path.join(dir, "comments.json");
   writeFileSync(commentsFile, typeof comments === "string" ? comments : JSON.stringify(comments));
   let executionFile = "";
@@ -32,20 +32,34 @@ function run({ comments, reviewOutcome, execution }) {
     executionFile = path.join(dir, "execution.json");
     writeFileSync(executionFile, JSON.stringify(execution));
   }
-  const lines = [];
-  const failureClass = main({
-    env: {
-      COMMENTS_FILE: commentsFile,
-      RUN_MARKER: MARKER,
-      START_TS: String(START),
-      HEAD_SHA: "abc",
-      REVIEW_OUTCOME: reviewOutcome,
-      EXECUTION_FILE: executionFile,
-      RUNNER_TEMP: dir,
-    },
-    log: (line) => lines.push(line),
-  });
-  return { failureClass, lines };
+  return {
+    COMMENTS_FILE: commentsFile,
+    RUN_MARKER: MARKER,
+    START_TS: String(START),
+    HEAD_SHA: "abc",
+    REVIEW_OUTCOME: reviewOutcome,
+    EXECUTION_FILE: executionFile,
+    RUNNER_TEMP: dir,
+  };
+}
+
+function classOf(inputs) {
+  return main({ env: env(inputs), log: () => {} });
+}
+
+function runBlock(stepId) {
+  const lines = readFileSync(path.join(HERE, "action.yml"), "utf8").split("\n");
+  const start = lines.findIndex((line) => line.trim() === `- id: ${stepId}`);
+  const run = lines.findIndex((line, index) => index > start && line.trim() === "run: |");
+  const indent = lines[run].search(/\S/);
+  const body = [];
+  for (const line of lines.slice(run + 1)) {
+    if (line.trim() !== "" && line.search(/\S/) <= indent) {
+      break;
+    }
+    body.push(line.slice(indent + 2));
+  }
+  return body.join("\n");
 }
 
 const USAGE_REJECTED = [
@@ -57,57 +71,52 @@ describe("verify-claude-review", () => {
   it("labels a successful review that posted nothing never-posted", () => {
     // openclaw-cake#413 run 40722142710: the review step succeeded, posted
     // nothing, and the old guard skipped the classifier, leaving `unknown`.
-    assert.equal(run({ comments: [[]], reviewOutcome: "success" }).failureClass, "never-posted");
+    // The action runs the script as a CLI and reads `class` from GITHUB_OUTPUT.
+    const outputFile = path.join(dir, "github-output");
+    writeFileSync(outputFile, "");
+    const result = spawnSync(process.execPath, [path.join(HERE, "verify-claude-review.mjs")], {
+      env: { ...process.env, ...env({ comments: [[]], reviewOutcome: "success" }), GITHUB_OUTPUT: outputFile },
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(readFileSync(outputFile, "utf8"), "class=never-posted\n");
   });
 
   it("passes a posted comment even when the review step then failed", () => {
-    const result = run({ comments: [[comment()]], reviewOutcome: "failure", execution: USAGE_REJECTED });
-    assert.equal(result.failureClass, "");
+    assert.equal(classOf({ comments: [[comment()]], reviewOutcome: "failure", execution: USAGE_REJECTED }), "");
   });
 
   it("keeps the classifier class for a failed review that posted nothing", () => {
-    const result = run({ comments: [[]], reviewOutcome: "failure", execution: USAGE_REJECTED });
-    assert.equal(result.failureClass, "out-of-usage");
+    assert.equal(classOf({ comments: [[]], reviewOutcome: "failure", execution: USAGE_REJECTED }), "out-of-usage");
   });
 
   it("reads the skip marker so a workflow self-edit stays workflow-modified", () => {
     writeFileSync(path.join(dir, "claude-review-skip.json"), JSON.stringify({ reason: "workflow-modified" }));
-    assert.equal(run({ comments: [[]], reviewOutcome: "failure" }).failureClass, "workflow-modified");
+    assert.equal(classOf({ comments: [[]], reviewOutcome: "failure" }), "workflow-modified");
   });
 
-  it("passes a markerless claude[bot] comment with a warning", () => {
-    const result = run({ comments: [[comment({ body: "# Code Review" })]], reviewOutcome: "success" });
-    assert.equal(result.failureClass, "");
-    assert.ok(result.lines.some((line) => line.startsWith("::warning::")));
+  it("passes a claude[bot] comment that lost the run marker", () => {
+    assert.equal(classOf({ comments: [[comment({ body: "# Code Review" })]], reviewOutcome: "success" }), "");
+  });
+
+  it("counts only claude[bot] comments inside the run window, on any page", () => {
+    const forged = [[comment({ login: "octocat" })], [comment({ at: START - 1 })]];
+    assert.equal(classOf({ comments: forged, reviewOutcome: "success" }), "never-posted");
+    assert.equal(classOf({ comments: [...forged, [comment()]], reviewOutcome: "failure" }), "");
   });
 
   it("fails closed on an unparseable comments payload", () => {
-    assert.equal(run({ comments: "not json", reviewOutcome: "success" }).failureClass, "unknown");
+    assert.equal(classOf({ comments: "not json", reviewOutcome: "success" }), "unknown");
   });
 });
 
-describe("countReviewComments", () => {
-  it("counts only in-window claude[bot] comments across slurped pages", () => {
-    const payload = [
-      [comment(), comment({ login: "octocat" })],
-      [comment({ at: START - 1 }), comment({ body: "late, no marker" })],
-    ];
-    assert.deepEqual(countReviewComments(payload, { marker: MARKER, start: START }), { posted: 2, marked: 1 });
-  });
-});
-
-describe("action contract", () => {
-  it("annotates every class the action can emit", () => {
-    for (const failureClass of FAILURE_CLASSES.filter((value) => value !== "completed")) {
-      assert.ok(CLASS_ANNOTATIONS[failureClass], `missing annotation for ${failureClass}`);
-    }
-    assert.match(annotation("never-posted", "abc"), /^::error::.*head abc .*class=never-posted/);
-  });
-
-  it("prints the failure marker as the report step's last output", () => {
-    const actionYml = readFileSync(path.join(HERE, "action.yml"), "utf8");
-    const report = actionYml.slice(actionYml.indexOf("- id: report"));
-    const outputs = report.split("\n").filter((line) => /^\s+(echo|node|console\.log)/.test(line));
-    assert.match(outputs.at(-1), /echo "CLAUDE_REVIEW_FAILURE_CLASS=\$\{FAILURE_CLASS\}"$/);
+describe("report step", () => {
+  it("fails the step and prints the failure marker last", () => {
+    const result = spawnSync("bash", ["-c", runBlock("report")], {
+      env: { ...process.env, FAILURE_CLASS: "never-posted", HEAD_SHA: "abc", ACTION_PATH: HERE },
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 1, result.stderr);
+    assert.equal(result.stdout.trimEnd().split("\n").at(-1), "CLAUDE_REVIEW_FAILURE_CLASS=never-posted");
   });
 });

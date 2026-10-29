@@ -36,6 +36,12 @@ inputs:
     description: The reviewed PR number.
     required: false
     default: ${{ github.event.pull_request.number }}
+  expect_comment:
+    description: >-
+      "false" for a run that renders its review instead of posting it (a dry
+      run); the action then verifies nothing and passes.
+    required: false
+    default: "true"
 
 outputs:
   class:
@@ -60,8 +66,14 @@ runs:
         REVIEW_OUTCOME: ${{ inputs.review_outcome }}
         EXECUTION_FILE: ${{ inputs.execution_file }}
         ACTION_PATH: ${{ github.action_path }}
+        EXPECT_COMMENT: ${{ inputs.expect_comment }}
       run: |
         set -euo pipefail
+        if [ "$EXPECT_COMMENT" = "false" ]; then
+          echo "::notice::expect_comment=false; this run posts no review comment, so nothing is verified for head ${HEAD_SHA}."
+          echo "class=" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
         if ! gh api --paginate --slurp "repos/$REPO/issues/$PR_NUMBER/comments" > "$COMMENTS_FILE"; then
           echo "::error::could not list PR comments (gh api failed); cannot verify a review comment exists for head ${HEAD_SHA}."
           echo "class=unknown" >> "$GITHUB_OUTPUT"
@@ -81,7 +93,8 @@ runs:
         retention-days: 14
 
     - id: report
-      if: ${{ steps.evaluate.outputs.class != '' }}
+      # !cancelled(): a failed upload must not suppress the marker.
+      if: ${{ !cancelled() && steps.evaluate.outputs.class != '' }}
       shell: bash
       env:
         FAILURE_CLASS: ${{ steps.evaluate.outputs.class }}
