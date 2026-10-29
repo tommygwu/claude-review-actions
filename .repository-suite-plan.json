@@ -22,6 +22,7 @@
       "inputs": [
         "review",
         "classify-claude-review",
+        "verify-claude-review",
         "scripts/run-node-tests.sh"
       ],
       "dependencies": [],
