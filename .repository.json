@@ -52,7 +52,8 @@
         "lane": "fast",
         "inputs": [
           "review/**",
-          "classify-claude-review/**"
+          "classify-claude-review/**",
+          "verify-claude-review/**"
         ]
       },
       "ci-run-context": {

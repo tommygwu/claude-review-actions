@@ -1,0 +1,98 @@
+name: Verify claude-review comment
+description: >-
+  Own the whole post-review sequence: verify a claude[bot] review comment was
+  posted this run, and when none was, emit one CLAUDE_REVIEW_FAILURE_CLASS
+  marker, keep the reviewer transcript, and fail. A verified comment always
+  ends green, whatever the review step's outcome.
+
+inputs:
+  execution_file:
+    description: >-
+      The review step's execution_file output; may be empty.
+    required: false
+    default: ""
+  review_outcome:
+    description: >-
+      The review step's outcome (steps.<review-step-id>.outcome):
+      success | failure | cancelled | skipped.
+    required: true
+  run_marker:
+    description: >-
+      The run marker the prompt asked the reviewer to end its comment with.
+      A missing marker is a warning, never a failure.
+    required: true
+  start_ts:
+    description: >-
+      Epoch seconds recorded before the review step; only comments created at
+      or after it count.
+    required: true
+  head_sha:
+    description: The reviewed head SHA, for annotations and the artifact name.
+    required: true
+  github_token:
+    description: Token that can list the PR's issue comments.
+    required: true
+  pr_number:
+    description: The reviewed PR number.
+    required: false
+    default: ${{ github.event.pull_request.number }}
+
+outputs:
+  class:
+    description: >-
+      Empty when a comment was verified; otherwise the failure class, one of
+      the non-completed values in classify-claude-review/failure-classes.json.
+    value: ${{ steps.evaluate.outputs.class }}
+
+runs:
+  using: composite
+  steps:
+    - id: evaluate
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+        REPO: ${{ github.repository }}
+        PR_NUMBER: ${{ inputs.pr_number }}
+        COMMENTS_FILE: ${{ runner.temp }}/claude-review-comments.json
+        RUN_MARKER: ${{ inputs.run_marker }}
+        START_TS: ${{ inputs.start_ts }}
+        HEAD_SHA: ${{ inputs.head_sha }}
+        REVIEW_OUTCOME: ${{ inputs.review_outcome }}
+        EXECUTION_FILE: ${{ inputs.execution_file }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+        if ! gh api --paginate --slurp "repos/$REPO/issues/$PR_NUMBER/comments" > "$COMMENTS_FILE"; then
+          echo "::error::could not list PR comments (gh api failed); cannot verify a review comment exists for head ${HEAD_SHA}."
+          echo "class=unknown" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        if ! node "$ACTION_PATH/verify-claude-review.mjs"; then
+          echo "::error::the comment verifier crashed for head ${HEAD_SHA}."
+          echo "class=unknown" >> "$GITHUB_OUTPUT"
+        fi
+
+    - if: ${{ steps.evaluate.outputs.class != '' && inputs.execution_file != '' }}
+      uses: actions/upload-artifact@v7
+      with:
+        name: claude-review-execution-${{ inputs.head_sha }}-${{ github.run_attempt }}
+        path: ${{ inputs.execution_file }}
+        if-no-files-found: ignore
+        retention-days: 14
+
+    - id: report
+      if: ${{ steps.evaluate.outputs.class != '' }}
+      shell: bash
+      env:
+        FAILURE_CLASS: ${{ steps.evaluate.outputs.class }}
+        HEAD_SHA: ${{ inputs.head_sha }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+        node --input-type=module -e '
+          const { annotation } = await import(process.env.ACTION_PATH + "/verify-claude-review.mjs");
+          console.log(annotation(process.env.FAILURE_CLASS, process.env.HEAD_SHA));
+        ' || echo "::error::claude-review posted no review comment for head ${HEAD_SHA} (class=${FAILURE_CLASS})."
+        # The marker prints last so the classifier's last-marker rule reads it.
+        echo "CLAUDE_REVIEW_FAILURE_CLASS=${FAILURE_CLASS}"
+        exit 1

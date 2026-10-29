@@ -18,22 +18,18 @@ It selects `--model claude-opus-5-5` and disables `Agent,Task` tools because bac
             Review PR ${{ github.event.pull_request.number }} in ${{ github.repository }}.
             Write the review to review.md and post it as a PR comment.
 
-      - name: Classify review outcome
-        id: classify
+      - name: Verify a review comment was posted
         if: ${{ !cancelled() }}
-        continue-on-error: true
-        uses: tommygwu/claude-review-actions/classify-claude-review@v1
+        uses: tommygwu/claude-review-actions/verify-claude-review@v1
         with:
-          execution_file: ${{ steps.claude-review.outputs.execution_file }}
-          action_outcome: ${{ steps.claude-review.outcome }}
+          # ...
 ```
 
-These steps run the reviewer and collect diagnostics; the caller then checks whether a `claude[bot]` comment was posted.
+[`verify-claude-review`](../verify-claude-review/README.md#usage) then checks whether a `claude[bot]` comment was posted and owns the job's only red condition.
 Claude review is best-effort: that comment counts as success; red means no comment was posted.
-`continue-on-error` lets the caller reach comment verification after an action failure; use `outcome` for classification because `conclusion` can become `success`.
-For classifier conditions, failure classes, and log-marker names, see its [public contract](../classify-claude-review/README.md).
+`continue-on-error` lets verification run after an action failure; pass `outcome`, because `conclusion` becomes `success`.
 
-The caller owns the prompt, token, additional tools, step environment, and comment verification.
+The caller owns the prompt, token, additional tools, and step environment.
 With `review_file`, start the action at `GITHUB_WORKSPACE` and use that same root filename in the prompt.
 Grant the permissions required by upstream, plus `contents: read` for workflow-skip detection.
 

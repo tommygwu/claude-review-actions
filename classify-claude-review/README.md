@@ -1,29 +1,13 @@
 # classify-claude-review
 
 Composite action that classifies the review step's outcome and execution evidence without a model call or prose matching.
-The caller owns comment verification: a posted `claude[bot]` comment counts as success; red means no comment was posted.
+[`verify-claude-review`](../verify-claude-review/README.md) runs this classifier only when no comment was posted after a failed review step, and owns the failure marker.
 A failure class supplies diagnostics and does not prove whether a comment exists.
 
 ## Usage
 
-For the paired reviewer and classifier steps, see the [review example](../review/README.md#usage).
-To classify a direct `anthropics/claude-code-action` call, use its step ID in both inputs:
-
-```yaml
-      - name: Classify review outcome
-        id: classify
-        if: ${{ !cancelled() }}
-        continue-on-error: true
-        uses: tommygwu/claude-review-actions/classify-claude-review@v1
-        with:
-          execution_file: ${{ steps.claude-review.outputs.execution_file }}
-          action_outcome: ${{ steps.claude-review.outcome }}
-```
-
-Run classification with `if: ${{ !cancelled() }}` so it also handles a successful review step.
-`completed` means the step outcome was `success`, even with no execution file; it does not prove the reviewer ran or posted.
-An empty `class` after classification was expected means the output was not produced; inspect step execution and wiring.
-`continue-on-error` keeps diagnostics from preventing the caller's comment check.
+Review workflows call [`verify-claude-review`](../verify-claude-review/README.md#usage), which imports this classifier.
+The standalone action stays only until every review workflow calls `verify-claude-review`; add no new caller.
 
 ## Inputs and output
 
@@ -49,7 +33,7 @@ For other outcomes, the classifier applies these rules:
 | `reviewer-errored` | A result message records turns or cost without an auth or usage signal; a retry may help. |
 | `startup-failure` | Missing or empty output, an empty/non-array message value, or no result and no typed auth or usage signal; inspect the review log before retrying. |
 | `unknown` | Invalid JSON, an unreadable file other than a missing file, or a result with no turns, cost, auth signal, or usage signal. |
-| `never-posted` | Reserved for caller comment verification; this action never emits it. |
+| `never-posted` | Emitted by `verify-claude-review` for a successful review step with no comment; this action never emits it. |
 
 `startup-failure` does not prove the reviewer never started.
 Early usage exhaustion, cancellation, a failed file write, and startup faults can leave the same evidence.
@@ -65,11 +49,7 @@ Direct upstream calls do not produce this marker, so a successful upstream skip 
 
 ## Log-marker consumers
 
-Consumers that parse `gh run view --log-failed` by the tab-separated prefix `claude-review\tClassify review outcome\t` require the job name `claude-review` and calling step name `Classify review outcome`.
-Composite-action log lines use the calling step name.
-Keep those names stable when a consumer uses that parser; a renamed step can still emit a marker the parser cannot find.
-With `continue-on-error`, the classifier step may be absent from `--log-failed`; stable names alone do not ensure marker visibility.
-Use `steps.classify.outputs.class` within the job, or inspect full logs when needed.
+The claude-review-verdict consumer reads the marker that `verify-claude-review` prints under its calling step; see its [usage](../verify-claude-review/README.md#usage) for the required names.
 
 Tests check the classifier, action wiring, skip-marker integration, and vocabulary parity.
 See [maintenance validation](../AGENTS.md) for the declared command.
