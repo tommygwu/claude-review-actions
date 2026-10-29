@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -71,11 +71,23 @@ describe("verify-claude-review", () => {
   it("labels a successful review that posted nothing never-posted", () => {
     // openclaw-cake#413 run 40722142710: the review step succeeded, posted
     // nothing, and the old guard skipped the classifier, leaving `unknown`.
-    // The action runs the script as a CLI and reads `class` from GITHUB_OUTPUT.
+    // Runs the action's evaluate step with the default expect_comment.
+    const bin = path.join(dir, "bin");
+    mkdirSync(bin);
+    writeFileSync(path.join(bin, "gh"), "#!/usr/bin/env bash\necho '[[]]'\n", { mode: 0o755 });
     const outputFile = path.join(dir, "github-output");
     writeFileSync(outputFile, "");
-    const result = spawnSync(process.execPath, [path.join(HERE, "verify-claude-review.mjs")], {
-      env: { ...process.env, ...env({ comments: [[]], reviewOutcome: "success" }), GITHUB_OUTPUT: outputFile },
+    const result = spawnSync("bash", ["-c", runBlock("evaluate")], {
+      env: {
+        ...process.env,
+        ...env({ comments: [], reviewOutcome: "success" }),
+        PATH: `${bin}${path.delimiter}${process.env.PATH}`,
+        GITHUB_OUTPUT: outputFile,
+        ACTION_PATH: HERE,
+        EXPECT_COMMENT: "true",
+        REPO: "acme/app",
+        PR_NUMBER: "1",
+      },
       encoding: "utf8",
     });
     assert.equal(result.status, 0, result.stderr);
