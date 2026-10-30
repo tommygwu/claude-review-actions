@@ -24,7 +24,7 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-function env({ comments, reviewOutcome, execution }) {
+function env({ comments, reviewOutcome, execution, startTs = String(START) }) {
   const commentsFile = path.join(dir, "comments.json");
   writeFileSync(commentsFile, typeof comments === "string" ? comments : JSON.stringify(comments));
   let executionFile = "";
@@ -35,7 +35,7 @@ function env({ comments, reviewOutcome, execution }) {
   return {
     COMMENTS_FILE: commentsFile,
     RUN_MARKER: MARKER,
-    START_TS: String(START),
+    START_TS: startTs,
     HEAD_SHA: "abc",
     REVIEW_OUTCOME: reviewOutcome,
     EXECUTION_FILE: executionFile,
@@ -62,6 +62,29 @@ function runBlock(stepId) {
   return body.join("\n");
 }
 
+function runEvaluate(stepEnv) {
+  const bin = path.join(dir, "bin");
+  mkdirSync(bin);
+  writeFileSync(path.join(bin, "gh"), "#!/usr/bin/env bash\necho '[[]]'\n", { mode: 0o755 });
+  const outputFile = path.join(dir, "github-output");
+  writeFileSync(outputFile, "");
+  const result = spawnSync("bash", ["-c", runBlock("evaluate")], {
+    env: {
+      ...process.env,
+      ...stepEnv,
+      PATH: `${bin}${path.delimiter}${process.env.PATH}`,
+      GITHUB_OUTPUT: outputFile,
+      ACTION_PATH: HERE,
+      EXPECT_COMMENT: "true",
+      REPO: "acme/app",
+      PR_NUMBER: "1",
+    },
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  return readFileSync(outputFile, "utf8");
+}
+
 const USAGE_REJECTED = [
   { type: "system", subtype: "init" },
   { type: "rate_limit_event", rate_limit_info: { status: "rejected" } },
@@ -71,27 +94,17 @@ describe("verify-claude-review", () => {
   it("labels a successful review that posted nothing never-posted", () => {
     // openclaw-cake#413 run 40722142710: the review step succeeded, posted
     // nothing, and the old guard skipped the classifier, leaving `unknown`.
-    // Runs the action's evaluate step with the default expect_comment.
-    const bin = path.join(dir, "bin");
-    mkdirSync(bin);
-    writeFileSync(path.join(bin, "gh"), "#!/usr/bin/env bash\necho '[[]]'\n", { mode: 0o755 });
-    const outputFile = path.join(dir, "github-output");
-    writeFileSync(outputFile, "");
-    const result = spawnSync("bash", ["-c", runBlock("evaluate")], {
-      env: {
-        ...process.env,
-        ...env({ comments: [], reviewOutcome: "success" }),
-        PATH: `${bin}${path.delimiter}${process.env.PATH}`,
-        GITHUB_OUTPUT: outputFile,
-        ACTION_PATH: HERE,
-        EXPECT_COMMENT: "true",
-        REPO: "acme/app",
-        PR_NUMBER: "1",
-      },
-      encoding: "utf8",
-    });
-    assert.equal(result.status, 0, result.stderr);
-    assert.equal(readFileSync(outputFile, "utf8"), "class=never-posted\n");
+    assert.equal(runEvaluate(env({ comments: [], reviewOutcome: "success" })), "class=never-posted\n");
+  });
+
+  it("classifies a skipped review with no start time instead of labeling it unknown", () => {
+    // ampedrevenue/databakes#36: a failed checkout left start_ts empty and
+    // skipped the review step; `unknown` hid a rerunnable startup-failure.
+    assert.equal(runEvaluate(env({ comments: [], reviewOutcome: "skipped", startTs: "" })), "class=startup-failure\n");
+  });
+
+  it("keeps unknown for a successful review with no start time", () => {
+    assert.equal(classOf({ comments: [[comment()]], reviewOutcome: "success", startTs: "" }), "unknown");
   });
 
   it("passes a posted comment even when the review step then failed", () => {

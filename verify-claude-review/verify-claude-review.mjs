@@ -79,33 +79,40 @@ function executionHead(executionFile) {
  * Decide the failure class for one review run: "" when a comment was verified.
  * A verified comment wins over every review outcome. With no comment, a
  * successful review step is never-posted and a failed one keeps the
+ * classifier's class. Without a start time no comment can be verified: a
+ * successful review is unknown, and an unsuccessful one keeps the
  * classifier's class.
  */
 export function evaluate({ commentsText, env, log }) {
   const head = env.HEAD_SHA ?? "";
   const start = Number.parseInt(env.START_TS ?? "", 10);
-  if (!Number.isInteger(start)) {
+  if (Number.isInteger(start)) {
+    let counts;
+    try {
+      counts = countReviewComments(JSON.parse(commentsText), { marker: env.RUN_MARKER ?? "", start });
+    } catch (error) {
+      log(`::error::invalid review-comment evidence for head ${head}: ${getErrorDetails(error).message}`);
+      return "unknown";
+    }
+    if (counts.posted > 0) {
+      if (counts.marked === 0) {
+        log(
+          `::warning::claude[bot] posted ${counts.posted} review comment(s) this run for head ${head} but none carries this run's marker; passing per the best-effort policy.`
+        );
+      }
+      log(`verified ${counts.posted} claude[bot] review comment(s) this run (${counts.marked} marker-matched) for head ${head}`);
+      return "";
+    }
+    if (env.REVIEW_OUTCOME === "success") {
+      return "never-posted";
+    }
+  } else if (env.REVIEW_OUTCOME === "success") {
     log(`::error::start_ts is not an integer epoch (${env.START_TS ?? ""}); cannot verify head ${head}.`);
     return "unknown";
-  }
-  let counts;
-  try {
-    counts = countReviewComments(JSON.parse(commentsText), { marker: env.RUN_MARKER ?? "", start });
-  } catch (error) {
-    log(`::error::invalid review-comment evidence for head ${head}: ${getErrorDetails(error).message}`);
-    return "unknown";
-  }
-  if (counts.posted > 0) {
-    if (counts.marked === 0) {
-      log(
-        `::warning::claude[bot] posted ${counts.posted} review comment(s) this run for head ${head} but none carries this run's marker; passing per the best-effort policy.`
-      );
-    }
-    log(`verified ${counts.posted} claude[bot] review comment(s) this run (${counts.marked} marker-matched) for head ${head}`);
-    return "";
-  }
-  if (env.REVIEW_OUTCOME === "success") {
-    return "never-posted";
+  } else {
+    log(
+      `::warning::start_ts is not an integer epoch (${env.START_TS ?? ""}) and the review step's outcome is ${env.REVIEW_OUTCOME ?? ""}; classifying head ${head} without counting comments.`
+    );
   }
   const failureClass = classifyExecution({
     argv: [env.EXECUTION_FILE ?? ""],
