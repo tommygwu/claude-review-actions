@@ -1,0 +1,913 @@
+{
+  "provenance": "Synthetic provider shapes based on official GitHub Actions REST and GraphQL API records; all identities, names, and timestamps are synthetic.",
+  "runs": {
+    "total_count": 3,
+    "workflow_runs": [
+      {
+        "conclusion": null,
+        "created_at": "2000-01-02T11:50:02Z",
+        "head_sha": "0000000000000000000000000000000000000001",
+        "id": 10001,
+        "run_attempt": 1,
+        "run_started_at": "2000-01-02T11:50:02Z",
+        "status": "pending",
+        "workflow_id": 10002,
+        "check_suite_node_id": "CS_synthetic_001"
+      },
+      {
+        "conclusion": null,
+        "created_at": "2000-01-02T10:43:47Z",
+        "head_sha": "0000000000000000000000000000000000000002",
+        "id": 10003,
+        "run_attempt": 1,
+        "run_started_at": "2000-01-02T10:43:47Z",
+        "status": "queued",
+        "workflow_id": 10002,
+        "check_suite_node_id": "CS_synthetic_002"
+      },
+      {
+        "conclusion": "cancelled",
+        "created_at": "2000-01-02T10:21:15Z",
+        "head_sha": "0000000000000000000000000000000000000003",
+        "id": 10004,
+        "run_attempt": 1,
+        "run_started_at": "2000-01-02T10:21:15Z",
+        "status": "completed",
+        "workflow_id": 10002,
+        "check_suite_node_id": "CS_synthetic_003"
+      }
+    ]
+  },
+  "attempt": {
+    "conclusion": "cancelled",
+    "id": 10004,
+    "run_attempt": 1,
+    "run_started_at": "2000-01-02T10:21:15Z",
+    "status": "completed"
+  },
+  "completed_jobs": {
+    "total_count": 2,
+    "jobs": [
+      {
+        "conclusion": "success",
+        "name": "post-merge-config",
+        "started_at": "2000-01-02T09:23:17Z",
+        "status": "completed"
+      },
+      {
+        "conclusion": "success",
+        "name": "pipeline-step-001",
+        "started_at": "2000-01-02T09:32:09Z",
+        "status": "completed"
+      }
+    ]
+  },
+  "all_checks": {
+    "suite": {
+      "id": "CS_synthetic_004",
+      "checkRuns": {
+        "nodes": [
+          {
+            "name": "pipeline-step-002",
+            "status": "COMPLETED",
+            "conclusion": "FAILURE",
+            "startedAt": "2000-01-02T07:10:58Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10006"
+          },
+          {
+            "name": "pipeline-step-003",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:32:37Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10007"
+          },
+          {
+            "name": "pipeline-step-004",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:35:30Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10008"
+          },
+          {
+            "name": "pipeline-step-005",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:54:50Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10009"
+          },
+          {
+            "name": "pipeline-step-006",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:49:45Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10010"
+          },
+          {
+            "name": "pipeline-step-007",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:35:30Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10011"
+          },
+          {
+            "name": "pipeline-step-008",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:35:30Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10012"
+          },
+          {
+            "name": "pipeline-step-009",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:35:13Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10013"
+          },
+          {
+            "name": "pipeline-step-010",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:35:30Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10014"
+          },
+          {
+            "name": "pipeline-step-011",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:35:14Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10015"
+          },
+          {
+            "name": "pipeline-step-012",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:35:30Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10016"
+          },
+          {
+            "name": "pipeline-step-013",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:35:13Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10017"
+          },
+          {
+            "name": "pipeline-step-014",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:35:13Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10018"
+          },
+          {
+            "name": "pipeline-step-015",
+            "status": "COMPLETED",
+            "conclusion": "SKIPPED",
+            "startedAt": "2000-01-02T07:08:46Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10019"
+          },
+          {
+            "name": "pipeline-step-016",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:35:13Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10020"
+          },
+          {
+            "name": "pipeline-step-017",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:35:13Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10021"
+          },
+          {
+            "name": "pipeline-step-018",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:35:13Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10022"
+          },
+          {
+            "name": "pipeline-step-019",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:35:13Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10023"
+          },
+          {
+            "name": "pipeline-step-020",
+            "status": "COMPLETED",
+            "conclusion": "SKIPPED",
+            "startedAt": "2000-01-02T07:08:46Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10024"
+          },
+          {
+            "name": "pipeline-step-021",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:35:13Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10025"
+          },
+          {
+            "name": "pipeline-step-022",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:35:13Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10026"
+          },
+          {
+            "name": "pipeline-step-023",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:33:34Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10027"
+          },
+          {
+            "name": "pipeline-step-024",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:33:00Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10028"
+          },
+          {
+            "name": "post-merge-config",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:32:37Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10029"
+          },
+          {
+            "name": "pipeline-step-025",
+            "status": "COMPLETED",
+            "conclusion": "FAILURE",
+            "startedAt": "2000-01-02T07:08:48Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10030"
+          },
+          {
+            "name": "pipeline-step-026",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:32:43Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10031"
+          },
+          {
+            "name": "pipeline-step-002",
+            "status": "COMPLETED",
+            "conclusion": "FAILURE",
+            "startedAt": "2000-01-02T05:54:56Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10032"
+          },
+          {
+            "name": "pipeline-step-005",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:54:50Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10033"
+          },
+          {
+            "name": "pipeline-step-006",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:49:45Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10034"
+          },
+          {
+            "name": "pipeline-step-004",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:35:30Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10035"
+          },
+          {
+            "name": "pipeline-step-010",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:35:30Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10036"
+          },
+          {
+            "name": "pipeline-step-012",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:35:30Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10037"
+          },
+          {
+            "name": "pipeline-step-008",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:35:30Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10038"
+          },
+          {
+            "name": "pipeline-step-007",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:35:30Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10039"
+          },
+          {
+            "name": "pipeline-step-020",
+            "status": "COMPLETED",
+            "conclusion": "SKIPPED",
+            "startedAt": "2000-01-02T05:35:12Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10040"
+          },
+          {
+            "name": "pipeline-step-015",
+            "status": "COMPLETED",
+            "conclusion": "SKIPPED",
+            "startedAt": "2000-01-02T05:35:12Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10041"
+          },
+          {
+            "name": "pipeline-step-018",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:35:13Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10042"
+          },
+          {
+            "name": "pipeline-step-016",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:35:13Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10043"
+          },
+          {
+            "name": "pipeline-step-013",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:35:13Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10044"
+          },
+          {
+            "name": "pipeline-step-011",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:35:14Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10045"
+          },
+          {
+            "name": "pipeline-step-025",
+            "status": "COMPLETED",
+            "conclusion": "FAILURE",
+            "startedAt": "2000-01-02T05:35:27Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10046"
+          },
+          {
+            "name": "pipeline-step-017",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:35:13Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10047"
+          },
+          {
+            "name": "pipeline-step-009",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:35:13Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10048"
+          },
+          {
+            "name": "pipeline-step-021",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:35:13Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10049"
+          },
+          {
+            "name": "pipeline-step-014",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:35:13Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10050"
+          },
+          {
+            "name": "pipeline-step-019",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:35:13Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10051"
+          },
+          {
+            "name": "pipeline-step-022",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:35:13Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10052"
+          },
+          {
+            "name": "pipeline-step-023",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:33:34Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10053"
+          },
+          {
+            "name": "pipeline-step-024",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:33:00Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10054"
+          },
+          {
+            "name": "pipeline-step-026",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:32:43Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10055"
+          },
+          {
+            "name": "post-merge-config",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:32:37Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10056"
+          },
+          {
+            "name": "pipeline-step-003",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "startedAt": "2000-01-02T05:32:37Z",
+            "detailsUrl": "https://github.com/owner/repo/actions/runs/10005/job/10057"
+          }
+        ],
+        "pageInfo": {
+          "hasNextPage": false,
+          "endCursor": null
+        },
+        "totalCount": 52
+      }
+    },
+    "jobs": [
+      {
+        "id": 10057,
+        "run_id": 10005,
+        "run_attempt": 1,
+        "name": "pipeline-step-003",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:32:37Z"
+      },
+      {
+        "id": 10056,
+        "run_id": 10005,
+        "run_attempt": 1,
+        "name": "post-merge-config",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:32:37Z"
+      },
+      {
+        "id": 10055,
+        "run_id": 10005,
+        "run_attempt": 1,
+        "name": "pipeline-step-026",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:32:43Z"
+      },
+      {
+        "id": 10054,
+        "run_id": 10005,
+        "run_attempt": 1,
+        "name": "pipeline-step-024",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:33:00Z"
+      },
+      {
+        "id": 10053,
+        "run_id": 10005,
+        "run_attempt": 1,
+        "name": "pipeline-step-023",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:33:34Z"
+      },
+      {
+        "id": 10052,
+        "run_id": 10005,
+        "run_attempt": 1,
+        "name": "pipeline-step-022",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:35:13Z"
+      },
+      {
+        "id": 10051,
+        "run_id": 10005,
+        "run_attempt": 1,
+        "name": "pipeline-step-019",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:35:13Z"
+      },
+      {
+        "id": 10050,
+        "run_id": 10005,
+        "run_attempt": 1,
+        "name": "pipeline-step-014",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:35:13Z"
+      },
+      {
+        "id": 10049,
+        "run_id": 10005,
+        "run_attempt": 1,
+        "name": "pipeline-step-021",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:35:13Z"
+      },
+      {
+        "id": 10048,
+        "run_id": 10005,
+        "run_attempt": 1,
+        "name": "pipeline-step-009",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:35:13Z"
+      },
+      {
+        "id": 10047,
+        "run_id": 10005,
+        "run_attempt": 1,
+        "name": "pipeline-step-017",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:35:13Z"
+      },
+      {
+        "id": 10046,
+        "run_id": 10005,
+        "run_attempt": 1,
+        "name": "pipeline-step-025",
+        "status": "completed",
+        "conclusion": "failure",
+        "started_at": "2000-01-02T05:35:27Z"
+      },
+      {
+        "id": 10045,
+        "run_id": 10005,
+        "run_attempt": 1,
+        "name": "pipeline-step-011",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:35:14Z"
+      },
+      {
+        "id": 10044,
+        "run_id": 10005,
+        "run_attempt": 1,
+        "name": "pipeline-step-013",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:35:13Z"
+      },
+      {
+        "id": 10043,
+        "run_id": 10005,
+        "run_attempt": 1,
+        "name": "pipeline-step-016",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:35:13Z"
+      },
+      {
+        "id": 10042,
+        "run_id": 10005,
+        "run_attempt": 1,
+        "name": "pipeline-step-018",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:35:13Z"
+      },
+      {
+        "id": 10041,
+        "run_id": 10005,
+        "run_attempt": 1,
+        "name": "pipeline-step-015",
+        "status": "completed",
+        "conclusion": "skipped",
+        "started_at": "2000-01-02T05:35:12Z"
+      },
+      {
+        "id": 10040,
+        "run_id": 10005,
+        "run_attempt": 1,
+        "name": "pipeline-step-020",
+        "status": "completed",
+        "conclusion": "skipped",
+        "started_at": "2000-01-02T05:35:12Z"
+      },
+      {
+        "id": 10039,
+        "run_id": 10005,
+        "run_attempt": 1,
+        "name": "pipeline-step-007",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:35:30Z"
+      },
+      {
+        "id": 10038,
+        "run_id": 10005,
+        "run_attempt": 1,
+        "name": "pipeline-step-008",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:35:30Z"
+      },
+      {
+        "id": 10037,
+        "run_id": 10005,
+        "run_attempt": 1,
+        "name": "pipeline-step-012",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:35:30Z"
+      },
+      {
+        "id": 10036,
+        "run_id": 10005,
+        "run_attempt": 1,
+        "name": "pipeline-step-010",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:35:30Z"
+      },
+      {
+        "id": 10035,
+        "run_id": 10005,
+        "run_attempt": 1,
+        "name": "pipeline-step-004",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:35:30Z"
+      },
+      {
+        "id": 10034,
+        "run_id": 10005,
+        "run_attempt": 1,
+        "name": "pipeline-step-006",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:49:45Z"
+      },
+      {
+        "id": 10033,
+        "run_id": 10005,
+        "run_attempt": 1,
+        "name": "pipeline-step-005",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:54:50Z"
+      },
+      {
+        "id": 10032,
+        "run_id": 10005,
+        "run_attempt": 1,
+        "name": "pipeline-step-002",
+        "status": "completed",
+        "conclusion": "failure",
+        "started_at": "2000-01-02T05:54:56Z"
+      },
+      {
+        "id": 10031,
+        "run_id": 10005,
+        "run_attempt": 2,
+        "name": "pipeline-step-026",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:32:43Z"
+      },
+      {
+        "id": 10030,
+        "run_id": 10005,
+        "run_attempt": 2,
+        "name": "pipeline-step-025",
+        "status": "completed",
+        "conclusion": "failure",
+        "started_at": "2000-01-02T07:08:48Z"
+      },
+      {
+        "id": 10029,
+        "run_id": 10005,
+        "run_attempt": 2,
+        "name": "post-merge-config",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:32:37Z"
+      },
+      {
+        "id": 10028,
+        "run_id": 10005,
+        "run_attempt": 2,
+        "name": "pipeline-step-024",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:33:00Z"
+      },
+      {
+        "id": 10027,
+        "run_id": 10005,
+        "run_attempt": 2,
+        "name": "pipeline-step-023",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:33:34Z"
+      },
+      {
+        "id": 10026,
+        "run_id": 10005,
+        "run_attempt": 2,
+        "name": "pipeline-step-022",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:35:13Z"
+      },
+      {
+        "id": 10025,
+        "run_id": 10005,
+        "run_attempt": 2,
+        "name": "pipeline-step-021",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:35:13Z"
+      },
+      {
+        "id": 10024,
+        "run_id": 10005,
+        "run_attempt": 2,
+        "name": "pipeline-step-020",
+        "status": "completed",
+        "conclusion": "skipped",
+        "started_at": "2000-01-02T07:08:46Z"
+      },
+      {
+        "id": 10023,
+        "run_id": 10005,
+        "run_attempt": 2,
+        "name": "pipeline-step-019",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:35:13Z"
+      },
+      {
+        "id": 10022,
+        "run_id": 10005,
+        "run_attempt": 2,
+        "name": "pipeline-step-018",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:35:13Z"
+      },
+      {
+        "id": 10021,
+        "run_id": 10005,
+        "run_attempt": 2,
+        "name": "pipeline-step-017",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:35:13Z"
+      },
+      {
+        "id": 10020,
+        "run_id": 10005,
+        "run_attempt": 2,
+        "name": "pipeline-step-016",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:35:13Z"
+      },
+      {
+        "id": 10019,
+        "run_id": 10005,
+        "run_attempt": 2,
+        "name": "pipeline-step-015",
+        "status": "completed",
+        "conclusion": "skipped",
+        "started_at": "2000-01-02T07:08:46Z"
+      },
+      {
+        "id": 10018,
+        "run_id": 10005,
+        "run_attempt": 2,
+        "name": "pipeline-step-014",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:35:13Z"
+      },
+      {
+        "id": 10017,
+        "run_id": 10005,
+        "run_attempt": 2,
+        "name": "pipeline-step-013",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:35:13Z"
+      },
+      {
+        "id": 10016,
+        "run_id": 10005,
+        "run_attempt": 2,
+        "name": "pipeline-step-012",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:35:30Z"
+      },
+      {
+        "id": 10015,
+        "run_id": 10005,
+        "run_attempt": 2,
+        "name": "pipeline-step-011",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:35:14Z"
+      },
+      {
+        "id": 10014,
+        "run_id": 10005,
+        "run_attempt": 2,
+        "name": "pipeline-step-010",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:35:30Z"
+      },
+      {
+        "id": 10013,
+        "run_id": 10005,
+        "run_attempt": 2,
+        "name": "pipeline-step-009",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:35:13Z"
+      },
+      {
+        "id": 10012,
+        "run_id": 10005,
+        "run_attempt": 2,
+        "name": "pipeline-step-008",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:35:30Z"
+      },
+      {
+        "id": 10011,
+        "run_id": 10005,
+        "run_attempt": 2,
+        "name": "pipeline-step-007",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:35:30Z"
+      },
+      {
+        "id": 10010,
+        "run_id": 10005,
+        "run_attempt": 2,
+        "name": "pipeline-step-006",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:49:45Z"
+      },
+      {
+        "id": 10009,
+        "run_id": 10005,
+        "run_attempt": 2,
+        "name": "pipeline-step-005",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:54:50Z"
+      },
+      {
+        "id": 10008,
+        "run_id": 10005,
+        "run_attempt": 2,
+        "name": "pipeline-step-004",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:35:30Z"
+      },
+      {
+        "id": 10007,
+        "run_id": 10005,
+        "run_attempt": 2,
+        "name": "pipeline-step-003",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2000-01-02T05:32:37Z"
+      },
+      {
+        "id": 10006,
+        "run_id": 10005,
+        "run_attempt": 2,
+        "name": "pipeline-step-002",
+        "status": "completed",
+        "conclusion": "failure",
+        "started_at": "2000-01-02T07:10:58Z"
+      }
+    ]
+  }
+}

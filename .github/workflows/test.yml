@@ -39,3 +39,6 @@ jobs:
       - name: Run CI context schema tests
         if: always()
         run: node scripts/run-python.mjs -B scripts/test_run_context_schema.py
+      - name: Run post-merge cadence tests
+        if: always()
+        run: node scripts/run-python.mjs -B -m unittest discover -s .github/actions/post-merge-cadence -p 'test_*.py'
