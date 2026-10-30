@@ -45,7 +45,7 @@ def check_state(record):
             or conclusion is not None and not isinstance(conclusion, str)
             or isinstance(conclusion, str) and conclusion.lower() not in CHECK_CONCLUSIONS
             or state.lower() == "completed" and not conclusion):
-        raise ValueError("GitHub GraphQL returned an invalid check lifecycle")
+        raise ValueError("GitHub returned an invalid check lifecycle")
     return state.lower(), conclusion.lower() if conclusion else None
 
 
@@ -112,6 +112,7 @@ class GitHub:
     def pages(self, resource, field, total_field="total_count", cap=None):
         url = query(resource, per_page=100)
         seen = set()
+        identities = set()
         rows = []
         total = None
         while url:
@@ -119,11 +120,21 @@ class GitHub:
                 raise ValueError("GitHub pagination repeated a page")
             seen.add(url)
             data, links = self.request("GET", url)
-            if not isinstance(data.get(field), list) or type(data.get(total_field)) is not int:
+            if (not isinstance(data, dict) or not isinstance(data.get(field), list)
+                    or type(data.get(total_field)) is not int or data[total_field] < 0):
                 raise ValueError("GitHub returned an incomplete history response")
             if total is None:
                 total = data[total_field]
+            elif data[total_field] != total:
+                raise ValueError("GitHub history count changed during pagination")
+            for row in data[field]:
+                if (not isinstance(row, dict) or type(row.get("id")) is not int or row["id"] <= 0
+                        or row["id"] in identities):
+                    raise ValueError("GitHub history contains invalid or duplicate record identities")
+                identities.add(row["id"])
             rows.extend(data[field])
+            if len(rows) > total:
+                raise ValueError("GitHub history contains more records than its declared count")
             if cap and len(rows) >= cap:
                 break
             url = next((part.split(";", 1)[0].strip()[1:-1]
@@ -302,7 +313,12 @@ class GitHub:
             if error.code not in (409, 422):
                 raise
             current = self.get(f"/actions/runs/{run['id']}")
-            if current["status"] != "completed" or current["run_attempt"] != run["run_attempt"]:
+            if (not isinstance(current, dict) or type(current.get("id")) is not int or current["id"] != run["id"]
+                    or not isinstance(current.get("status"), str) or current["status"] not in CHECK_STATUSES
+                    or type(current.get("run_attempt")) is not int
+                    or current["run_attempt"] < run["run_attempt"]):
+                raise
+            if current["status"] != "completed" or current["run_attempt"] > run["run_attempt"]:
                 return False
             raise
         return True
@@ -359,8 +375,15 @@ class History:
             tested = None
             for number in range(int(run["run_attempt"]), 0, -1):
                 attempt = self.api.attempt(run["id"], number)
-                if attempt["id"] != run["id"] or int(attempt["run_attempt"]) != number:
+                if (not isinstance(attempt, dict) or type(attempt.get("id")) is not int
+                        or attempt["id"] != run["id"] or type(attempt.get("run_attempt")) is not int
+                        or attempt["run_attempt"] != number):
                     raise ValueError("GitHub returned a mismatched workflow attempt")
+                state, conclusion = check_state(attempt)
+                attempt.update(status=state, conclusion=conclusion)
+                if number == int(run["run_attempt"]):
+                    timestamp(attempt["run_started_at"])
+                    run.update(status=state, conclusion=conclusion, run_started_at=attempt["run_started_at"])
                 if attempt["conclusion"] == "cancelled":
                     continue
                 if any(self.test_job(job) for job in self.api.jobs(run["id"], number)):

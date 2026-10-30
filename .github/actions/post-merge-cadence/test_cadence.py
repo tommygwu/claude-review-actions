@@ -201,6 +201,10 @@ class Scenario:
                   [row for row in rows if row["created_at"] < boundary])
 
     def attempt(self, row, number, jobs, **updates):
+        jobs = copy.deepcopy(jobs)
+        for index, job in enumerate(jobs):
+            job.update(id=row["id"] * 100000 + number * 1000 + index,
+                       run_id=row["id"], run_attempt=number)
         attempt = copy.deepcopy(RECORDED["attempt"])
         attempt.update(row, run_attempt=number)
         attempt.update(updates)
@@ -214,11 +218,11 @@ class Scenario:
         jobs = []
         for (identifier, number), attempt_jobs in self.attempt_jobs.items():
             if identifier == row["id"]:
-                for index, job in enumerate(attempt_jobs):
+                for job in attempt_jobs:
                     jobs.append({"name": job["name"], "status": job["status"].upper(),
                                  "conclusion": job["conclusion"].upper() if job["conclusion"] else None,
                                  "startedAt": job.get("started_at"),
-                                 "detailsUrl": f"https://github.com/owner/repo/actions/runs/{identifier}/job/{number * 1000 + index}"})
+                                 "detailsUrl": f"https://github.com/owner/repo/actions/runs/{identifier}/job/{job['id']}"})
         return {"id": key, "status": row["status"].upper(),
                 "conclusion": row["conclusion"].upper() if row["conclusion"] else None,
                 "workflowRun": {"databaseId": row["id"], "runAttempt": row["run_attempt"]},
@@ -498,6 +502,28 @@ class Checker(unittest.TestCase):
                 self.assertEqual(1 if discovery == "timing" else 2,
                                  sum(request.full_url.endswith("/graphql") for request in scenario.http.calls))
 
+    def test_latest_exact_attempt_state_blocks_rerun_despite_stale_completed_run_and_suite(self):
+        for discovery in ("timing", "coverage"):
+            for state in ("queued", "in_progress"):
+                with self.subTest(discovery=discovery, state=state):
+                    records = [run(100, "candidate", 0), run(99, "tested", 5, tested=True)]
+                    if discovery == "coverage":
+                        records += [run(identifier, f"skipped-{identifier}", 6 + (98 - identifier))
+                                    for identifier in range(98, 80, -1)]
+                    records += [run(1, "late-active", 40, tested=True, attempt=2,
+                                    started=1 if discovery == "timing" else 40)]
+                    scenario = Scenario(records)
+                    row = scenario.rows[1]
+                    jobs = copy.deepcopy(records[-1][1])
+                    jobs[-1].update(status=state, conclusion=None,
+                                    started_at=clock(1) if state == "in_progress" else None)
+                    scenario.attempt(row, 2, jobs, status=state, conclusion=None)
+                    scenario.attempt(row, 1, records[-1][1], run_started_at=clock(41))
+                    scenario.execute()
+                    self.assertEqual([], scenario.http.posts())
+                    self.assertTrue(any(request.full_url == ROOT + "/actions/runs/1/attempts/2"
+                                        for request in scenario.http.calls))
+
     def test_refreshed_attempt_start_reorders_timing_before_older_failure_can_trigger_rerun(self):
         records = [run(100, "candidate", 0), run(99, "failure", 5, tested=True, conclusion="failure")]
         records += [run(identifier, f"skipped-{identifier}", 6 + (98 - identifier))
@@ -569,13 +595,18 @@ class StoppedTests(unittest.TestCase):
             scenario.execute(operation="decide")
 
     def test_attempt_created_at_cannot_reset_original_push_arrival(self):
-        record = run(1, "a", 20, tested=True, attempt=2, conclusion="cancelled", started=1)
-        scenario = Scenario([run(3, "c", 0), record])
-        scenario.attempt(scenario.rows[1], 1, [], conclusion="success", created_at=clock(1), run_started_at=clock(1))
-        with self.assertRaises(ValueError):
-            scenario.execute(operation="decide")
-        self.assertTrue(any("/actions/runs/1/attempts/1/jobs" in request.full_url for request in scenario.http.calls))
-        self.assertEqual([], scenario.http.posts())
+        for changed_attempt in (1, 2):
+            with self.subTest(changed_attempt=changed_attempt):
+                record = run(1, "a", 20, tested=True, attempt=2, conclusion="cancelled", started=1)
+                scenario = Scenario([run(3, "c", 0), record])
+                scenario.attempt(scenario.rows[1], 1, [], conclusion="success", run_started_at=clock(1),
+                                 created_at=clock(1) if changed_attempt == 1 else clock(20))
+                scenario.attempt(scenario.rows[1], 2, record[1], conclusion="cancelled", run_started_at=clock(1),
+                                 created_at=clock(1) if changed_attempt == 2 else clock(20))
+                with self.assertRaises(ValueError):
+                    scenario.execute(operation="decide")
+                self.assertTrue(any("/actions/runs/1/attempts/1/jobs" in request.full_url for request in scenario.http.calls))
+                self.assertEqual([], scenario.http.posts())
 
     def test_same_sha_current_push_does_not_hide_earlier_overdue_arrival(self):
         scenario = Scenario([run(3, "c", 0), run(1, "c", 20)])
@@ -674,10 +705,42 @@ class ApiContract(unittest.TestCase):
                 self.http.add(resource, payload, links=links)
                 self.api.workflows()
 
+    def test_invalid_totals_and_duplicate_run_pages_cannot_hide_history(self):
+        resource = "/actions/workflows/1/runs?event=push&branch=main&per_page=100"
+        newest = run(3, "newest", 0)[0]
+        older = run(1, "overdue", 20)[0]
+        cases = [({"total_count": total, "workflow_runs": []}, None)
+                 for total in (-1, True, 1.5, "0", None)]
+        cases += [({"total_count": 1, "workflow_runs": [row]}, None)
+                  for row in ({}, {"id": True}, {"id": "1"}, {"id": 0}, {"id": -1}, None)]
+        cases += [({"total_count": 1, "workflow_runs": [newest, older]}, None),
+                  ({"total_count": 2, "workflow_runs": [newest]},
+                   {"total_count": 1, "workflow_runs": [older]}),
+                  ({"total_count": 2, "workflow_runs": [newest]},
+                   {"total_count": 3, "workflow_runs": [older]}),
+                  ({"total_count": 2, "workflow_runs": [newest]},
+                   {"total_count": 2, "workflow_runs": [newest]})]
+        for first, second in cases:
+            with self.subTest(first=first, second=second):
+                self.http.add(resource, first,
+                              links=f'<{ROOT}{resource}&page=2>; rel="next"' if second else "")
+                if second:
+                    self.http.add(resource + "&page=2", second)
+                with self.assertRaises(ValueError):
+                    self.api.runs(1, "main")
+
     def test_rerun_races_defer_only_when_refetch_confirms_progress(self):
-        row = run(1, "a", 1)[0]
-        for code, current, deferred in ((409, {**row, "status": "in_progress"}, True),
-                                        (422, {**row, "run_attempt": 2}, True), (422, row, False), (403, row, False)):
+        row = run(1, "a", 1, attempt=2)[0]
+        valid = (({**row, "status": "in_progress"}, True),
+                 ({**row, "run_attempt": 3}, True), (row, False))
+        invalid = [None, [], {}, {**row, "id": 99}, {**row, "id": True},
+                   {**row, "id": "1"}, {**row, "status": "unknown"}, {**row, "status": None},
+                   {**row, "run_attempt": "3"}, {**row, "run_attempt": True},
+                   {**row, "run_attempt": 1}, {**row, "run_attempt": 1, "status": "in_progress"}]
+        cases = [(code, current, deferred) for code in (409, 422)
+                 for current, deferred in (*valid, *((current, False) for current in invalid))]
+        cases.append((403, row, False))
+        for code, current, deferred in cases:
             with self.subTest(code=code, current=current):
                 self.http.add("/actions/runs/1/rerun", HTTPError(ROOT, code, TOKEN, {}, None), method="POST")
                 self.http.add("/actions/runs/1", current)
@@ -686,6 +749,7 @@ class ApiContract(unittest.TestCase):
                 else:
                     with self.assertRaises(cadence.ApiError) as failure:
                         self.api.rerun(row)
+                    self.assertEqual(code, failure.exception.code)
                     self.assertIn("POST /repos/owner/repo/actions/runs/1/rerun", str(failure.exception))
                     self.assertNotIn(TOKEN, str(failure.exception))
 

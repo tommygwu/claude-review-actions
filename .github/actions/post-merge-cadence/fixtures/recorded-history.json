@@ -52,13 +52,15 @@
         "conclusion": "success",
         "name": "post-merge-config",
         "started_at": "2000-01-02T09:23:17Z",
-        "status": "completed"
+        "status": "completed",
+        "id": 10058
       },
       {
         "conclusion": "success",
         "name": "pipeline-step-001",
         "started_at": "2000-01-02T09:32:09Z",
-        "status": "completed"
+        "status": "completed",
+        "id": 10059
       }
     ]
   },
