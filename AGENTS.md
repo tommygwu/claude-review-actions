@@ -6,7 +6,7 @@ Read the public contract and its owners for the task:
 |---|---|
 | Change reviewer defaults, permissions, or skip detection | [review/README.md](review/README.md), [action.yml](review/action.yml), and the affected `review/*.mjs` files and tests. |
 | Change comment verification or the failure marker | [verify-claude-review/README.md](verify-claude-review/README.md), its [action.yml](verify-claude-review/action.yml), script, and tests. |
-| Change classification or diagnostics | [classify-claude-review/README.md](classify-claude-review/README.md), its [action.yml](classify-claude-review/action.yml), [vocabulary](classify-claude-review/failure-classes.json), script, and tests. |
+| Change classification or diagnostics | [classify-claude-review/README.md](classify-claude-review/README.md), its [vocabulary](classify-claude-review/failure-classes.json), module, and tests, plus the [verify-claude-review](verify-claude-review/README.md) annotations. |
 | Change validation or runtime | [.repository.json](.repository.json), [.node-version](.node-version), [suite plan](.repository-suite-plan.json) and [dependency setup](scripts/setup-schema-tests.mjs), and [CI](.github/workflows/test.yml). |
 
 Keep public inputs, outputs, and failure semantics beside each action.

@@ -26,7 +26,7 @@ outputs:
   execution_file:
     description: >-
       Path to the claude-code-action execution file, for
-      classify-claude-review.
+      verify-claude-review.
     value: ${{ steps.review.outputs.execution_file }}
   skip_reason:
     description: >-
@@ -34,7 +34,7 @@ outputs:
       reviewer. `workflow-modified`: the PR changes the review workflow, so
       the upstream workflow validation skipped the run. `not-executed`: no
       known cause. Either way this action fails and writes a marker that
-      classify-claude-review reads. Empty on every normal run.
+      verify-claude-review reads. Empty on every normal run.
     value: ${{ steps.skip-check.outputs.skip_reason }}
 
 runs:

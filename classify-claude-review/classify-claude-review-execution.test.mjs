@@ -10,7 +10,6 @@ import {
   classifyMessages,
   FAILURE_CLASSES,
   getErrorDetails,
-  isMainModule,
   main,
   readSkipMarker,
   SKIP_MARKER_FILENAME,
@@ -360,47 +359,6 @@ describe("main", () => {
 
   it("shares one marker filename with the review action", () => {
     assert.equal(SKIP_MARKER_FILENAME, REVIEW_SKIP_MARKER_FILENAME);
-  });
-
-  it("does not evaluate the executable entrypoint when argv is absent", () => {
-    assert.equal(isMainModule(undefined), false);
-  });
-});
-
-describe("startup-failure annotation", () => {
-  it("names both causes instead of asserting the reviewer never started", () => {
-    // The class cannot separate a genuine startup failure from usage
-    // exhaustion, so the operator-facing text is the only thing standing
-    // between an ambiguous class and a rerun spent against a usage wall.
-    const actionYml = readFileSync(path.join(HERE, "action.yml"), "utf8");
-    const annotation = actionYml
-      .split("\n")
-      .find((line) => line.includes("::error::") && line.includes("class=startup-failure"));
-
-    assert.ok(annotation, "action.yml must emit a startup-failure ::error:: annotation");
-    assert.ok(/never started/.test(annotation), "annotation must still name the startup cause");
-    assert.ok(/usage exhaustion/.test(annotation), "annotation must name the usage cause");
-    assert.ok(
-      /indistinguishable/.test(annotation),
-      "annotation must say the causes cannot be told apart here"
-    );
-    assert.ok(
-      /cancelled/.test(annotation),
-      "enumeration must stay non-exhaustive — a cancelled step lands here too"
-    );
-  });
-});
-
-describe("class annotations", () => {
-  it("gives every classifier-emitted failure class its own case arm, so none falls through to the unknown text", () => {
-    const actionYml = readFileSync(path.join(HERE, "action.yml"), "utf8");
-    const workflowDerived = new Set(["completed", "never-posted", "unknown"]);
-    for (const failureClass of FAILURE_CLASSES.filter((value) => !workflowDerived.has(value))) {
-      assert.ok(
-        actionYml.includes(`          ${failureClass})\n`),
-        `action.yml is missing a case arm for ${failureClass}`
-      );
-    }
   });
 });
 
