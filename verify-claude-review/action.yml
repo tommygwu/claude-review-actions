@@ -39,7 +39,8 @@ inputs:
   expect_comment:
     description: >-
       "false" for a run that renders its review instead of posting it (a dry
-      run); the action then verifies nothing and passes.
+      run); the action then verifies nothing and passes, and keeps the
+      transcript when the review step did not succeed.
     required: false
     default: "true"
 
@@ -72,6 +73,11 @@ runs:
         if [ "$EXPECT_COMMENT" = "false" ]; then
           echo "::notice::expect_comment=false; this run posts no review comment, so nothing is verified for head ${HEAD_SHA}."
           echo "class=" >> "$GITHUB_OUTPUT"
+          if [ "$REVIEW_OUTCOME" = "success" ]; then
+            echo "keep_transcript=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "keep_transcript=true" >> "$GITHUB_OUTPUT"
+          fi
           exit 0
         fi
         if ! gh api --paginate --slurp "repos/$REPO/issues/$PR_NUMBER/comments" > "$COMMENTS_FILE"; then
@@ -84,7 +90,9 @@ runs:
           echo "class=unknown" >> "$GITHUB_OUTPUT"
         fi
 
-    - if: ${{ steps.evaluate.outputs.class != '' && inputs.execution_file != '' }}
+    - if: ${{ inputs.execution_file != '' && (steps.evaluate.outputs.class != '' || steps.evaluate.outputs.keep_transcript == 'true') }}
+      # A failed upload must not turn a dry run red.
+      continue-on-error: true
       uses: actions/upload-artifact@v7
       with:
         name: claude-review-execution-${{ inputs.head_sha }}-${{ github.run_attempt }}
