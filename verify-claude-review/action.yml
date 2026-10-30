@@ -101,7 +101,6 @@ runs:
         retention-days: 14
 
     - id: report
-      # !cancelled(): a failed upload must not suppress the marker.
       if: ${{ !cancelled() && steps.evaluate.outputs.class != '' }}
       shell: bash
       env:

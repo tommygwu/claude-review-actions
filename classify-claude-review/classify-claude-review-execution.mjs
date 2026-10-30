@@ -1,9 +1,6 @@
-#!/usr/bin/env node
-
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import { pathToFileURL } from "node:url";
 
 // Claude Code Review failure classes, derived from the structured SDK message
 // array the claude-code-action writes to its execution_file output. Downstream
@@ -18,7 +15,7 @@ export const FAILURE_CLASSES = Object.freeze([
   // workflow. classifyMessages never returns it.
   "workflow-modified",
   "reviewer-errored",
-  // Workflow-derived only: the verify/fallback steps emit never-posted when a
+  // Workflow-derived only: verify-claude-review emits never-posted when a
   // completed run left no valid comment. classifyMessages never returns it.
   "never-posted",
   "startup-failure",
@@ -47,19 +44,6 @@ export function getErrorDetails(error) {
   };
 }
 
-/** @internal Exported for testing the executable-entrypoint guard. */
-export function isMainModule(argvPath) {
-  if (typeof argvPath !== "string" || argvPath === "") {
-    return false;
-  }
-
-  try {
-    return import.meta.url === pathToFileURL(argvPath).href;
-  } catch {
-    return false;
-  }
-}
-
 // startup-failure does not prove the reviewer never started. It is the class
 // for "no classifiable execution output", and several causes share that shape:
 // the reviewer never started; usage exhaustion killed it before any usage
@@ -74,7 +58,7 @@ export function isMainModule(argvPath) {
 // reachable from a later step in the same job.
 //
 // Do not infer usage from message *shape* — no typed usage evidence exists on
-// this path. The step annotation names the causes instead of asserting one.
+// this path. verify-claude-review's annotation names the causes instead of asserting one.
 //
 // Verified against anthropics/claude-code-action base-action/src/run-claude-sdk.ts
 // and base-action/src/execution-file.ts as of 2026-07; the root action exposes
@@ -182,14 +166,11 @@ export function readSkipMarker(runnerTemp) {
   }
 }
 
-export function main({ argv, env }) {
-  const executionFilePath = argv[0] ?? "";
-  const actionOutcome = env.ACTION_OUTCOME ?? "";
-
+export function classifyExecution({ executionFile = "", actionOutcome = "", runnerTemp }) {
   let fileContent = null;
-  if (executionFilePath !== "") {
+  if (executionFile !== "") {
     try {
-      fileContent = readFileSync(executionFilePath, "utf8");
+      fileContent = readFileSync(executionFile, "utf8");
     } catch (error) {
       // ENOENT means no execution output was written; on a failed outcome that
       // is startup-failure (see the note above classifyMessages). Any other read
@@ -208,10 +189,6 @@ export function main({ argv, env }) {
   return classifyExecutionFile({
     actionOutcome,
     fileContent,
-    skipMarker: readSkipMarker(env.RUNNER_TEMP),
+    skipMarker: readSkipMarker(runnerTemp),
   });
-}
-
-if (isMainModule(process.argv[1])) {
-  process.stdout.write(`${main({ argv: process.argv.slice(2), env: process.env })}\n`);
 }
