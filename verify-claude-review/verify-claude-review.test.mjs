@@ -64,18 +64,18 @@ function runBlock(stepId) {
 
 function runEvaluate(stepEnv) {
   const bin = path.join(dir, "bin");
-  mkdirSync(bin);
+  mkdirSync(bin, { recursive: true });
   writeFileSync(path.join(bin, "gh"), "#!/usr/bin/env bash\necho '[[]]'\n", { mode: 0o755 });
   const outputFile = path.join(dir, "github-output");
   writeFileSync(outputFile, "");
   const result = spawnSync("bash", ["-c", runBlock("evaluate")], {
     env: {
       ...process.env,
+      EXPECT_COMMENT: "true",
       ...stepEnv,
       PATH: `${bin}${path.delimiter}${process.env.PATH}`,
       GITHUB_OUTPUT: outputFile,
       ACTION_PATH: HERE,
-      EXPECT_COMMENT: "true",
       REPO: "acme/app",
       PR_NUMBER: "1",
     },
@@ -128,6 +128,15 @@ describe("verify-claude-review", () => {
     const forged = [[comment({ login: "octocat" })], [comment({ at: START - 1 })]];
     assert.equal(classOf({ comments: forged, reviewOutcome: "success" }), "never-posted");
     assert.equal(classOf({ comments: [...forged, [comment()]], reviewOutcome: "failure" }), "");
+  });
+
+  it("keeps the transcript of a failed dry-run review and stays green", () => {
+    // ampedrevenue/hcos (task 408557c1): a dry run renders instead of posting,
+    // so a failed render left no transcript once hcos dropped its own upload.
+    const dryRun = (reviewOutcome) =>
+      runEvaluate({ ...env({ comments: [], reviewOutcome }), EXPECT_COMMENT: "false" });
+    assert.equal(dryRun("failure"), "class=\nkeep_transcript=true\n");
+    assert.equal(dryRun("success"), "class=\nkeep_transcript=false\n");
   });
 
   it("fails closed on an unparseable comments payload", () => {
