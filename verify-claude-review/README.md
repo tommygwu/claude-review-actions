@@ -61,4 +61,6 @@ The output `class` is empty when a comment was verified; otherwise it holds the 
 | `start_ts` not an integer, any other outcome | the classifier class, without counting comments | red |
 | Comments unreadable or unparseable | `unknown` | red |
 
+A repository that also runs `claude.yml`, the `@claude` responder that posts as `claude[bot]`, can pass with an in-window `@claude` reply and no review; the action shows this as the missing-marker warning, and the best-effort policy accepts it.
+
 On red, the action uploads `execution_file` as the `claude-review-execution-<head>-<attempt>` artifact, emits a class annotation, and prints `CLAUDE_REVIEW_FAILURE_CLASS=<class>` as its last line.
