@@ -166,14 +166,11 @@ export function readSkipMarker(runnerTemp) {
   }
 }
 
-export function main({ argv, env }) {
-  const executionFilePath = argv[0] ?? "";
-  const actionOutcome = env.ACTION_OUTCOME ?? "";
-
+export function classifyExecution({ executionFile = "", actionOutcome = "", runnerTemp }) {
   let fileContent = null;
-  if (executionFilePath !== "") {
+  if (executionFile !== "") {
     try {
-      fileContent = readFileSync(executionFilePath, "utf8");
+      fileContent = readFileSync(executionFile, "utf8");
     } catch (error) {
       // ENOENT means no execution output was written; on a failed outcome that
       // is startup-failure (see the note above classifyMessages). Any other read
@@ -192,6 +189,6 @@ export function main({ argv, env }) {
   return classifyExecutionFile({
     actionOutcome,
     fileContent,
-    skipMarker: readSkipMarker(env.RUNNER_TEMP),
+    skipMarker: readSkipMarker(runnerTemp),
   });
 }

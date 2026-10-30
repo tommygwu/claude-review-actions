@@ -6,11 +6,11 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, it } from "node:test";
 
 import {
+  classifyExecution,
   classifyExecutionFile,
   classifyMessages,
   FAILURE_CLASSES,
   getErrorDetails,
-  main,
   readSkipMarker,
   SKIP_MARKER_FILENAME,
 } from "./classify-claude-review-execution.mjs";
@@ -267,7 +267,7 @@ describe("classifyExecutionFile", () => {
   });
 });
 
-describe("main", () => {
+describe("classifyExecution", () => {
   let dir;
 
   beforeEach(() => {
@@ -278,7 +278,7 @@ describe("main", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it("reads the execution file from argv and classifies it", () => {
+  it("reads the execution file and classifies it", () => {
     const file = path.join(dir, "claude-execution-output.json");
     writeFileSync(
       file,
@@ -287,36 +287,36 @@ describe("main", () => {
         resultMessage({ is_error: true, num_turns: 18, total_cost_usd: 0.828587 }),
       ])
     );
-    assert.equal(main({ argv: [file], env: { ACTION_OUTCOME: "failure" } }), "reviewer-errored");
+    assert.equal(classifyExecution({ executionFile: file, actionOutcome: "failure" }), "reviewer-errored");
   });
 
   it("treats a missing file (ENOENT) as startup-failure", () => {
     assert.equal(
-      main({ argv: [path.join(dir, "missing.json")], env: { ACTION_OUTCOME: "failure" } }),
+      classifyExecution({ executionFile: path.join(dir, "missing.json"), actionOutcome: "failure" }),
       "startup-failure"
     );
   });
 
   it("treats a non-ENOENT read failure as unknown — output may exist, so never claim the reviewer never started", () => {
     // A directory path raises EISDIR on read.
-    assert.equal(main({ argv: [dir], env: { ACTION_OUTCOME: "failure" } }), "unknown");
+    assert.equal(classifyExecution({ executionFile: dir, actionOutcome: "failure" }), "unknown");
   });
 
   it("never escalates an unreadable file on a successful outcome — a green review stays completed", () => {
     // The escalation guard is `code !== "ENOENT" && actionOutcome !== "success"`.
     // Only its failure side was covered, so dropping the outcome half would
     // silently flip a passing review from completed to unknown.
-    assert.equal(main({ argv: [dir], env: { ACTION_OUTCOME: "success" } }), "completed");
+    assert.equal(classifyExecution({ executionFile: dir, actionOutcome: "success" }), "completed");
   });
 
   it("treats an empty execution_file output as startup-failure on a failed outcome", () => {
-    assert.equal(main({ argv: [""], env: { ACTION_OUTCOME: "failure" } }), "startup-failure");
+    assert.equal(classifyExecution({ executionFile: "", actionOutcome: "failure" }), "startup-failure");
   });
 
   it("reads the skip marker from RUNNER_TEMP when the review produced no execution file", () => {
     writeFileSync(path.join(dir, SKIP_MARKER_FILENAME), JSON.stringify({ reason: "workflow-modified" }));
     assert.equal(
-      main({ argv: [""], env: { ACTION_OUTCOME: "failure", RUNNER_TEMP: dir } }),
+      classifyExecution({ executionFile: "", actionOutcome: "failure", runnerTemp: dir }),
       "workflow-modified"
     );
   });
@@ -325,7 +325,7 @@ describe("main", () => {
     writeFileSync(path.join(dir, SKIP_MARKER_FILENAME), "not json {");
     assert.equal(readSkipMarker(dir), null);
     assert.equal(
-      main({ argv: [""], env: { ACTION_OUTCOME: "failure", RUNNER_TEMP: dir } }),
+      classifyExecution({ executionFile: "", actionOutcome: "failure", runnerTemp: dir }),
       "startup-failure"
     );
   });
@@ -352,7 +352,7 @@ describe("main", () => {
     assert.equal(reason, "workflow-modified");
     assert.equal(readFileSync(outputFile, "utf8"), "skip_reason=workflow-modified\n");
     assert.equal(
-      main({ argv: [""], env: { ACTION_OUTCOME: "failure", RUNNER_TEMP: dir } }),
+      classifyExecution({ executionFile: "", actionOutcome: "failure", runnerTemp: dir }),
       "workflow-modified"
     );
   });

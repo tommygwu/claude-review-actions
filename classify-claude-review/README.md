@@ -1,7 +1,7 @@
 # classify-claude-review
 
 Classifier module that derives one failure class from the review step's outcome and execution evidence, without a model call or prose matching.
-It is not an action: [`verify-claude-review`](../verify-claude-review/README.md) imports it, runs it only when no comment was posted, and owns the annotation and the failure marker.
+It is not an action: [`verify-claude-review`](../verify-claude-review/README.md) imports it, runs it when it cannot verify a comment for a review step that did not succeed, and owns the annotation and the failure marker.
 A failure class supplies diagnostics and does not prove whether a comment exists.
 
 Classes use the closed vocabulary in [failure-classes.json](failure-classes.json).

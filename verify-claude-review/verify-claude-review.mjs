@@ -4,10 +4,7 @@ import { appendFileSync, readFileSync } from "node:fs";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 
-import {
-  getErrorDetails,
-  main as classifyExecution,
-} from "../classify-claude-review/classify-claude-review-execution.mjs";
+import { classifyExecution, getErrorDetails } from "../classify-claude-review/classify-claude-review-execution.mjs";
 
 const REVIEWER_LOGIN = "claude[bot]";
 const EXECUTION_HEAD_BYTES = 800;
@@ -115,8 +112,9 @@ export function evaluate({ commentsText, env, log }) {
     );
   }
   const failureClass = classifyExecution({
-    argv: [env.EXECUTION_FILE ?? ""],
-    env: { ACTION_OUTCOME: env.REVIEW_OUTCOME ?? "", RUNNER_TEMP: env.RUNNER_TEMP },
+    executionFile: env.EXECUTION_FILE ?? "",
+    actionOutcome: env.REVIEW_OUTCOME ?? "",
+    runnerTemp: env.RUNNER_TEMP,
   });
   const executionText = executionHead(env.EXECUTION_FILE);
   if (executionText !== null) {
