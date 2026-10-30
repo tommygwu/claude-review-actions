@@ -57,6 +57,8 @@ The output `class` is empty when a comment was verified; otherwise it holds the 
 | A `claude[bot]` comment at or after `start_ts` | none | green, whatever `review_outcome` is |
 | No comment, `review_outcome=success` | `never-posted` | red |
 | No comment, any other outcome | the [classifier](../classify-claude-review/README.md#classification-rules) class | red |
+| `start_ts` not an integer, `review_outcome=success` | `unknown` | red |
+| `start_ts` not an integer, any other outcome | the classifier class, without counting comments | red |
 | Comments unreadable or unparseable | `unknown` | red |
 
 On red, the action uploads `execution_file` as the `claude-review-execution-<head>-<attempt>` artifact, emits a class annotation, and prints `CLAUDE_REVIEW_FAILURE_CLASS=<class>` as its last line.
