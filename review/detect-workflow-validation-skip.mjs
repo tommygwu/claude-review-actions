@@ -166,3 +166,5 @@ if (typeof process.argv[1] === "string" && import.meta.url === pathToFileURL(pro
   process.stdout.write(`${annotation}\n`);
   process.exitCode = 1;
 }
+
+// Disposable draft CI proof. Do not merge.
