@@ -167,4 +167,4 @@ if (typeof process.argv[1] === "string" && import.meta.url === pathToFileURL(pro
   process.exitCode = 1;
 }
 
-// Disposable draft CI proof. Do not merge.
+// Disposable draft CI proof, phase two. Do not merge.
