@@ -2,15 +2,15 @@ name: Test
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, closed]
+    types: [opened, synchronize, reopened, ready_for_review, closed]
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}${{ github.event.pull_request.draft && format('-draft-{0}', github.run_id) || '' }}
   cancel-in-progress: true
 
 jobs:
   test:
-    if: github.event.action != 'closed'
+    if: ${{ !github.event.pull_request.draft && github.event.action != 'closed' }}
     runs-on: ubuntu-latest
     steps:
       - name: Capture CI run context
