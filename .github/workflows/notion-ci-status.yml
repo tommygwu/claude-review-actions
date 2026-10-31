@@ -3,7 +3,7 @@ name: Notion CI status
 on:
   pull_request_target:
     branches: [main]
-    types: [opened, synchronize, reopened, labeled]
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
   workflow_run:
     workflows: ['*', '!Notion CI status']
     types: [in_progress, completed]
@@ -17,7 +17,7 @@ permissions:
 jobs:
   initialize-notion-ci-status:
     name: "Notion: initialize"
-    if: ${{ github.event_name == 'pull_request_target' && (github.event.action != 'labeled' || startsWith(github.event.label.name, 'notion:')) }}
+    if: ${{ github.event_name == 'pull_request_target' && !github.event.pull_request.draft && (github.event.action != 'labeled' || startsWith(github.event.label.name, 'notion:')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     concurrency:
@@ -48,7 +48,7 @@ jobs:
 
   complete-notion-ci-status:
     name: "Notion: complete"
-    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request' && (github.event.action != 'in_progress' || github.event.workflow_run.run_attempt > 1) }}
+    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request' && (github.event.workflow_run.conclusion != 'skipped' || github.event.workflow_run.run_attempt > 1) && (github.event.action != 'in_progress' || github.event.workflow_run.run_attempt > 1) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     concurrency:
