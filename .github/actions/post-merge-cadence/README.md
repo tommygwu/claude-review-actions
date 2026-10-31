@@ -41,6 +41,10 @@ On interval push attempt 1, `decide` fails when an earlier uncovered commit has 
 It excludes the current push and preserves the earliest arrival of each uncovered commit across later merges.
 The first merge after a quiet period therefore passes.
 Malformed settings, an omitted interval-check workflow list, missing or ambiguous workflow names, incomplete history, and API errors fail the action instead of assuming coverage.
+Enabled interval checks first read one newest push candidate.
+A completed, non-cancelled candidate skips full history only after its actual checks and attempts prove coverage, its run still matches, and a second newest-push read matches the original snapshot.
+This covered-head path reads no older workflow history and fetches no commit graph.
+An uncertain candidate or failed fast-path read uses the complete-history path.
 Filtered run lists are read in created-at windows beyond GitHub's 1,000-result cap.
 GraphQL batches paginate every available check run in each needed suite across attempts; incomplete or mismatched records fail instead of supplying negative evidence.
 The latest tested tip's complete ancestry rules out covered older runs before more check-suite or attempt reads; histories without tests are still read completely.

@@ -166,6 +166,31 @@ class GitHub:
             bound = oldest
         return sorted(result.values(), key=lambda row: (timestamp(row["created_at"]), row["id"]), reverse=True)
 
+    def newest_run(self, workflow_id, branch):
+        resource = query(f"/actions/workflows/{workflow_id}/runs", event="push", branch=branch, per_page=1)
+        data = self.get(resource)
+        if (not isinstance(data, dict) or type(data.get("total_count")) is not int
+                or data["total_count"] < 0 or not isinstance(data.get("workflow_runs"), list)
+                or len(data["workflow_runs"]) != min(data["total_count"], 1)):
+            raise ValueError("GitHub returned an invalid newest-run response")
+        if not data["workflow_runs"]:
+            return None
+        run = data["workflow_runs"][0]
+        if (not isinstance(run, dict) or type(run.get("id")) is not int or run["id"] <= 0
+                or run.get("workflow_id") != workflow_id or run.get("event") != "push"
+                or run.get("head_branch") != branch
+                or type(run.get("run_attempt")) is not int or run["run_attempt"] < 1
+                or not isinstance(run.get("check_suite_node_id"), str) or not run["check_suite_node_id"]
+                or not isinstance(run.get("head_sha"), str) or len(run["head_sha"]) != 40
+                or any(char not in "0123456789abcdef" for char in run["head_sha"])
+                or not isinstance(run.get("created_at"), str)
+                or not isinstance(run.get("run_started_at"), str)):
+            raise ValueError("GitHub returned a mismatched newest push run")
+        check_state(run)
+        timestamp(run["created_at"])
+        timestamp(run["run_started_at"])
+        return run
+
     def attempt(self, run_id, number):
         return self.get(f"/actions/runs/{run_id}/attempts/{number}")
 
@@ -325,9 +350,9 @@ class GitHub:
 
 
 class History:
-    def __init__(self, api, workflow_id, branch, excluded):
+    def __init__(self, api, workflow_id, branch, excluded, runs=None):
         self.api = api
-        self.runs = api.runs(workflow_id, branch)
+        self.runs = api.runs(workflow_id, branch) if runs is None else runs
         self.excluded = {"post-merge-config", *excluded}
         self.checks = {}
         self.changed_attempts = set()
@@ -447,6 +472,27 @@ class History:
         return {sha: created for sha, created in arrivals.items() if not self.is_covered(sha)}
 
 
+def newest_covered(api, workflow_id, branch, excluded):
+    try:
+        newest = api.newest_run(workflow_id, branch)
+        if newest is None or newest["status"] != "completed" or newest["conclusion"] == "cancelled":
+            return False
+        identity = ("id", "workflow_id", "event", "head_branch", "head_sha", "check_suite_node_id",
+                    "run_attempt", "status", "conclusion", "created_at", "run_started_at")
+        original = tuple(newest[key] for key in identity)
+        history = History(api, workflow_id, branch, excluded, runs=[newest.copy()])
+        if not history.tested(history.runs[0]) or history.changed_attempts:
+            return False
+        if tuple(history.runs[0][key] for key in identity) != original:
+            return False
+        current = api.run(newest["id"])
+        latest = api.newest_run(workflow_id, branch)
+        return (tuple(current[key] for key in identity) == original
+                and latest is not None and tuple(latest[key] for key in identity) == original)
+    except (ValueError, KeyError, TypeError, AttributeError, OSError, OverflowError):
+        return False
+
+
 def execute(inputs, env, event, api, now, summary):
     operation = inputs.get("operation", "decide")
     if operation not in ("decide", "check"):
@@ -494,7 +540,11 @@ def execute(inputs, env, event, api, now, summary):
         matches = [row for row in catalog if row["name"] == workflow]
         if len(matches) != 1:
             raise ValueError(f"Test workflow must match exactly one workflow: {workflow}")
-        history = History(api, matches[0]["id"], branch, excluded)
+        workflow_id = matches[0]["id"]
+        if operation == "check" and newest_covered(api, workflow_id, branch, excluded):
+            summary(f"{workflow}: no rerun; newest commit already has test coverage.")
+            continue
+        history = History(api, workflow_id, branch, excluded)
         if operation == "decide":
             current_id = int(env["GITHUB_RUN_ID"])
             current = next((row for row in history.runs if row["id"] == current_id), None)
