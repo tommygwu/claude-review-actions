@@ -38,7 +38,7 @@ def run(identifier, sha, age, *, tested=False, conclusion="success", attempt=1,
     row = copy.deepcopy(RECORDED["runs"]["workflow_runs"][0])
     row.update(id=identifier, head_sha=sha, created_at=clock(age), run_started_at=clock(age if started is None else started),
                status=status, conclusion=conclusion, run_attempt=attempt, workflow_id=workflow,
-               check_suite_node_id=f"CS_scenario_{identifier}")
+               check_suite_node_id=f"CS_scenario_{identifier}", event="push", head_branch="main")
     jobs = copy.deepcopy(RECORDED["completed_jobs"]["jobs"][:1])
     if tested:
         jobs.append(copy.deepcopy(RECORDED["completed_jobs"]["jobs"][1]))
@@ -83,6 +83,8 @@ class Transport:
         if key not in self.routes:
             raise AssertionError(f"Unexpected GitHub request: {request.method} {request.full_url}")
         payload, links = self.routes[key]
+        if callable(payload):
+            payload = payload(request)
         if isinstance(payload, Exception):
             if isinstance(payload, HTTPError):
                 payload.close()
@@ -172,15 +174,20 @@ class Scenario:
         self.http.add("/actions/workflows?per_page=100", {
             "total_count": len(workflows), "workflows": [{"id": identifier, "name": name} for identifier, name in workflows]})
         for row, jobs in records:
+            row.setdefault("event", "push")
+            row.setdefault("head_branch", "main")
             row["head_sha"] = self.graph.identities[row["head_sha"]]
             self.rows[row["id"]] = row
             self.snapshots[row["check_suite_node_id"]] = row.copy()
             self.attempt(row, row["run_attempt"], jobs)
+            self.http.add(f"/actions/runs/{row['id']}", row)
             self.http.add(f"/actions/runs/{row['id']}/rerun", {}, method="POST")
         for identifier, _ in workflows:
             self.history(identifier, [row for row, _ in records if row["workflow_id"] == identifier])
 
     def history(self, workflow, rows):
+        self.http.add(f"/actions/workflows/{workflow}/runs?event=push&branch=main&per_page=1",
+                      {"total_count": len(rows), "workflow_runs": rows[:1]})
         resource = f"/actions/workflows/{workflow}/runs?event=push&branch=main&per_page=100"
         def pages(url, items, total=None):
             for offset in range(0, max(len(items), 1), 100):
@@ -366,6 +373,58 @@ class Decisions(unittest.TestCase):
 
 
 class Checker(unittest.TestCase):
+    def test_unavailable_candidate_probe_uses_full_history_and_keeps_due_rerun(self):
+        for failure in (URLError("unavailable"), HTTPError(ROOT, 503, "unavailable", {}, None),
+                        OSError("connection reset"), TimeoutError("read timed out"),
+                        {"total_count": 1, "workflow_runs": []}):
+            with self.subTest(failure=type(failure).__name__):
+                scenario = Scenario([run(3, "candidate", 0), run(1, "tested", 5, tested=True)])
+                scenario.http.add("/actions/workflows/1/runs?event=push&branch=main&per_page=1", failure)
+                scenario.execute()
+                self.assertEqual([ROOT + "/actions/runs/3/rerun"], scenario.http.posts())
+                self.assertTrue(any("per_page=100" in request.full_url and "/workflows/1/runs?" in request.full_url
+                                    for request in scenario.http.calls))
+                self.assertTrue(any("fetch" in arguments for arguments, _ in scenario.graph.calls))
+
+    def test_malformed_exact_attempt_timestamp_falls_back_then_fails_full_history(self):
+        for started_at in (None, 17):
+            with self.subTest(started_at=started_at):
+                record = run(3, "candidate", 0, tested=True, attempt=2)
+                scenario = Scenario([record])
+                scenario.attempt(scenario.rows[3], 2, record[1], run_started_at=started_at)
+                with self.assertRaises((ValueError, TypeError, AttributeError)):
+                    scenario.execute()
+                resources = [request.full_url for request in scenario.http.calls]
+                self.assertIn(ROOT + "/actions/workflows/1/runs?event=push&branch=main&per_page=100", resources)
+                self.assertEqual(2, resources.count(ROOT + "/actions/runs/3/attempts/2"))
+                self.assertEqual([], scenario.http.posts())
+
+    def test_candidate_run_or_newest_push_changing_after_coverage_uses_full_history(self):
+        for changed_read in ("run", "newest"):
+            with self.subTest(changed_read=changed_read):
+                records = [run(3, "candidate", 5, tested=True)]
+                if changed_read == "newest":
+                    records.insert(0, run(4, "replacement", 0))
+                scenario = Scenario(records)
+                row = scenario.rows[3]
+                replacement = (scenario.rows[4] if changed_read == "newest" else
+                               {**row, "run_attempt": 2, "status": "in_progress", "conclusion": None})
+                resource = "/actions/workflows/1/runs?event=push&branch=main&per_page=1"
+                reads = 0
+                def newest(request):
+                    nonlocal reads
+                    reads += 1
+                    return {"total_count": 1, "workflow_runs": [replacement if reads > 1 else row]}
+                if changed_read == "run":
+                    scenario.http.add("/actions/runs/3", replacement)
+                else:
+                    scenario.http.add(resource, newest)
+                scenario.execute()
+                expected = [ROOT + "/actions/runs/4/rerun"] if changed_read == "newest" else []
+                self.assertEqual(expected, scenario.http.posts())
+                self.assertTrue(any("per_page=100" in request.full_url and "/workflows/1/runs?" in request.full_url
+                                    for request in scenario.http.calls))
+
     def test_recorded_pending_push_waits_without_attempt_or_rerun_requests(self):
         scenario = Scenario([(row, []) for row in RECORDED["runs"]["workflow_runs"]], workflows=[(10002, "Tests")])
         scenario.execute(**{"test-workflows": "Tests"})
@@ -395,6 +454,8 @@ class Checker(unittest.TestCase):
                 scenario = Scenario(records)
                 scenario.execute()
                 self.assertEqual([], scenario.http.posts())
+                self.assertTrue(any("per_page=100" in request.full_url and "/workflows/1/runs?" in request.full_url
+                                    for request in scenario.http.calls))
 
     def test_cancelled_latest_attempt_retains_earlier_test_and_its_start_clock(self):
         for original_start, expected in ((2, []), (5, [ROOT + "/actions/runs/3/rerun"])):
@@ -409,6 +470,8 @@ class Checker(unittest.TestCase):
         scenario.attempt(newest[0], 2, newest[1], conclusion="success", run_started_at=clock(5))
         scenario.execute()
         self.assertEqual([], scenario.http.posts())
+        self.assertTrue(any("per_page=100" in request.full_url and "/workflows/1/runs?" in request.full_url
+                            for request in scenario.http.calls))
 
     def test_latest_test_is_chosen_by_attempt_start_not_push_arrival(self):
         old = run(1, "a", 20, tested=True, attempt=2, started=1)
@@ -499,7 +562,7 @@ class Checker(unittest.TestCase):
                 scenario.snapshots[scenario.rows[1]["check_suite_node_id"]].update(status="IN_PROGRESS", conclusion=None)
                 scenario.execute()
                 self.assertEqual([], scenario.http.posts())
-                self.assertEqual(1 if discovery == "timing" else 2,
+                self.assertEqual(2 if discovery == "timing" else 3,
                                  sum(request.full_url.endswith("/graphql") for request in scenario.http.calls))
 
     def test_latest_exact_attempt_state_blocks_rerun_despite_stale_completed_run_and_suite(self):
@@ -800,6 +863,8 @@ class BatchedCheckContract(unittest.TestCase):
             for defect in cases:
                 with self.subTest(continuation=continuation, defect=defect):
                     scenario = Scenario([run(3, "c", 1)])
+                    scenario.http.add("/actions/workflows/1/runs?event=push&branch=main&per_page=1",
+                                      URLError("candidate lookup unavailable"))
                     key = scenario.rows[3]["check_suite_node_id"]
                     node = scenario.suite(key)
                     node["checkRuns"]["pageInfo"] = {"hasNextPage": False, "endCursor": None}
@@ -850,6 +915,8 @@ class BatchedCheckContract(unittest.TestCase):
         for defect in ("reversed", "truncated", "extra"):
             with self.subTest(defect=defect):
                 scenario = Scenario([run(3, "c", 0), run(1, "a", 5, tested=True)])
+                scenario.http.add("/actions/workflows/1/runs?event=push&branch=main&per_page=1",
+                                  URLError("candidate lookup unavailable"))
                 nodes = [scenario.suite(scenario.rows[identifier]["check_suite_node_id"]) for identifier in (3, 1)]
                 for node in nodes:
                     node["checkRuns"]["pageInfo"] = {"hasNextPage": False, "endCursor": None}
@@ -863,6 +930,8 @@ class BatchedCheckContract(unittest.TestCase):
         for defect in ("cursor", "attempt", "count"):
             with self.subTest(defect=defect):
                 scenario = Scenario([run(3, "c", 1)])
+                scenario.http.add("/actions/workflows/1/runs?event=push&branch=main&per_page=1",
+                                  URLError("candidate lookup unavailable"))
                 node = scenario.suite(scenario.rows[3]["check_suite_node_id"])
                 node["checkRuns"].update(totalCount=2, pageInfo={"hasNextPage": True, "endCursor": "same"})
                 count = 0
@@ -933,6 +1002,37 @@ class GitAncestryContract(unittest.TestCase):
 
 
 class HistoryCost(unittest.TestCase):
+    def test_covered_newest_push_has_bounded_requests_without_history_or_git_reads(self):
+        for attempt in (1, 2):
+            counts = []
+            for retained in (1, 1923):
+                with self.subTest(attempt=attempt, retained=retained):
+                    records = [run(1923, "covered", 0, tested=True, attempt=attempt,
+                                   conclusion="failure" if attempt == 2 else "success")]
+                    records += [run(identifier, f"older-{identifier}", 1 + (1923 - identifier) / 100)
+                                for identifier in range(1922, 1923 - retained, -1)]
+                    scenario = Scenario(records)
+                    for key in list(scenario.http.routes):
+                        if key[1].endswith("/workflows/1/runs") and ("per_page", ("100",)) in key[2]:
+                            del scenario.http.routes[key]
+                    def forbidden_git(arguments, options):
+                        raise AssertionError("Covered newest push must not read a commit graph")
+                    scenario.graph.failure = forbidden_git
+                    scenario.execute()
+                    self.assertEqual([], scenario.http.posts())
+                    self.assertEqual([], scenario.graph.calls)
+                    resources = [request.full_url for request in scenario.http.calls]
+                    self.assertEqual(2, resources.count(ROOT + "/actions/workflows/1/runs?event=push&branch=main&per_page=1"))
+                    self.assertIn("https://api.github.com/graphql", resources)
+                    self.assertIn(ROOT + "/actions/runs/1923", resources)
+                    if attempt == 2:
+                        self.assertIn(ROOT + "/actions/runs/1923/attempts/2", resources)
+                        self.assertIn(ROOT + "/actions/runs/1923/attempts/2/jobs?per_page=100", resources)
+                    self.assertLessEqual(len(resources), 7)
+                    self.assertEqual(1, len(scenario.summaries))
+                    counts.append(len(resources))
+            self.assertEqual(counts[0], counts[1])
+
     def test_projected_1923_skipped_only_runs_stay_below_rest_budget(self):
         records = [run(identifier, f"commit-{identifier}", (1924 - identifier) / 100)
                    for identifier in range(1923, 0, -1)]
@@ -942,7 +1042,7 @@ class HistoryCost(unittest.TestCase):
         rest = [request for request in scenario.http.calls if not request.full_url.endswith("/graphql")]
         graphql = [request for request in scenario.http.calls if request.full_url.endswith("/graphql")]
         self.assertLessEqual(len(rest), 1000)
-        self.assertEqual(97, len(graphql))
+        self.assertEqual(98, len(graphql))
         self.assertFalse(any("/attempts/" in request.full_url for request in rest))
         self.assertEqual([], scenario.graph.calls)
 
@@ -957,7 +1057,7 @@ class HistoryCost(unittest.TestCase):
         rest = [request for request in scenario.http.calls if not request.full_url.endswith("/graphql")]
         self.assertLessEqual(len(rest), 1000)
         self.assertEqual(2, sum("/attempts/" in request.full_url for request in rest))
-        self.assertEqual(1, sum(request.full_url.endswith("/graphql") for request in scenario.http.calls))
+        self.assertEqual(2, sum(request.full_url.endswith("/graphql") for request in scenario.http.calls))
         fetches = [options for arguments, options in scenario.graph.calls if "fetch" in arguments]
         self.assertEqual(1, len(fetches))
         self.assertEqual(scenario.graph.identities["commit-1922"] + "\n", fetches[0]["input"])
