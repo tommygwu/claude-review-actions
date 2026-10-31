@@ -7,6 +7,7 @@ Read the public contract and its owners for the task:
 | Change reviewer defaults, permissions, or skip detection | [review/README.md](review/README.md), [action.yml](review/action.yml), and the affected `review/*.mjs` files and tests. |
 | Change comment verification or the failure marker | [verify-claude-review/README.md](verify-claude-review/README.md), its [action.yml](verify-claude-review/action.yml), script, and tests. |
 | Change classification or diagnostics | [classify-claude-review/README.md](classify-claude-review/README.md), its [vocabulary](classify-claude-review/failure-classes.json), module, and tests, plus the [verify-claude-review](verify-claude-review/README.md) annotations. |
+| Change post-merge test cadence | [post-merge-cadence/README.md](.github/actions/post-merge-cadence/README.md), its action manifest, Python script, recorded fixtures, and tests, plus validation wiring. |
 | Change validation or runtime | [.repository.json](.repository.json), [.node-version](.node-version), [suite plan](.repository-suite-plan.json) and [dependency setup](scripts/setup-schema-tests.mjs), and [CI](.github/workflows/test.yml). |
 
 Keep public inputs, outputs, and failure semantics beside each action.
@@ -15,12 +16,13 @@ Classification supplies diagnostics; `verify-claude-review` owns comment verific
 
 Use the Node and Python versions in `.node-version` and `.python-version`.
 Install test-only schema dependencies with `python3 -m pip install --require-hashes -r requirements-schema-tests.txt`.
-The capture action uses only the Python standard library.
+The capture and cadence actions use only the Python standard library.
 Run `bash "$HOME/.agents/skills/repository/action.sh" run --repo "$PWD" --scope changed` through the shared repository tools.
 Run full validation through the same shared command with `--scope full`.
 For standalone native checks with the pinned runtimes, run `bash scripts/run-ci-checks.sh`.
-Use `--only node-test`, `--only ci-run-context`, or `--only ci-run-context-schema` for focused reruns.
-Changed validation selects units from declared inputs; shared tooling changes select all three. Public CI runs the three plan unit commands without access to the private toolkit.
+Use `--only node-test`, `--only ci-run-context`, `--only ci-run-context-schema`, or `--only post-merge-cadence` for focused reruns.
+Changed validation selects units from declared inputs; shared tooling changes select all units.
+Public CI runs the plan unit commands without access to the private toolkit.
 The shared repository command owns toolkit selection.
 The plan owns selection, filtering, and pass replay. Setup only creates the pinned Python environment and installs hash-locked test dependencies.
 

@@ -70,6 +70,13 @@
           "scripts/test_run_context_schema.py",
           "scripts/run-python.mjs"
         ]
+      },
+      "post-merge-cadence": {
+        "lane": "fast",
+        "inputs": [
+          ".github/actions/post-merge-cadence/**",
+          "scripts/run-python.mjs"
+        ]
       }
     }
   }

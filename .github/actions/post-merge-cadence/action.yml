@@ -1,0 +1,39 @@
+name: Post-merge test cadence
+description: Decide whether to test a push or rerun the newest untested push when due.
+inputs:
+  operation:
+    description: decide or check
+    default: decide
+  post-merge-ci:
+    description: Explicit true or false for push decisions and checks; non-push decisions ignore it.
+  cadence:
+    description: every-merge, newest-merge, or interval; required for push decisions and enabled checks.
+  interval-hours:
+    description: Positive whole hours for interval pushes and enabled interval checks.
+  test-workflows:
+    description: Workflow names, one per line; required for interval check. Decide uses the current workflow.
+  non-test-jobs:
+    description: Job names to exclude from tested coverage, one per line.
+  github-token:
+    description: github.token with contents and checks read plus actions read for decide, or actions write for check.
+    required: true
+outputs:
+  run_ci:
+    description: true or false from decide
+    value: ${{ steps.cadence.outputs.run_ci }}
+runs:
+  using: composite
+  steps:
+    - name: Evaluate cadence
+      id: cadence
+      shell: bash
+      env:
+        CADENCE_ACTION_PATH: ${{ github.action_path }}
+        INPUT_OPERATION: ${{ inputs.operation }}
+        INPUT_POST_MERGE_CI: ${{ inputs.post-merge-ci }}
+        INPUT_CADENCE: ${{ inputs.cadence }}
+        INPUT_INTERVAL_HOURS: ${{ inputs.interval-hours }}
+        INPUT_TEST_WORKFLOWS: ${{ inputs.test-workflows }}
+        INPUT_NON_TEST_JOBS: ${{ inputs.non-test-jobs }}
+        INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: python3 "$CADENCE_ACTION_PATH/cadence.py"
