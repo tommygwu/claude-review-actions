@@ -13,10 +13,6 @@ jobs:
     if: ${{ !github.event.pull_request.draft && github.event.action != 'closed' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Capture CI run context
-        continue-on-error: true
-        timeout-minutes: 1
-        uses: tommygwu/claude-review-actions/.github/actions/ci-run-context@e0b7fbb7e9502e2003bcfa9f56d93afabc0939e5
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
