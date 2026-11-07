@@ -35,7 +35,7 @@ if (selected.error || environment.error || selected.status !== 0 || environment.
     || realpathSync(selected.stdout.trim()) !== realpathSync(prefixes[1])) {
   fail("The local .venv does not match the declared interpreter; use a clean worktree.");
 }
-const installed = spawnSync(pythonPath, ["-m", "pip", "--isolated", "--require-virtualenv", "install", "--disable-pip-version-check", "--no-input", "--timeout", "15", "--retries", "0", "--require-hashes", "-r", "requirements-schema-tests.txt"], {
+const installed = spawnSync(pythonPath, ["-m", "pip", "--isolated", "--require-virtualenv", "install", "--disable-pip-version-check", "--no-input", "--timeout", "15", "--retries", "0", "--uploaded-prior-to", "P7D", "--require-hashes", "-r", "requirements-schema-tests.txt"], {
   cwd: root, stdio: ["ignore", 2, 2], timeout: 60000,
   env: { ...process.env, PIP_CONFIG_FILE: devNull },
 });
