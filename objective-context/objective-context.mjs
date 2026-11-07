@@ -83,7 +83,13 @@ function bulletSection(intent, title) {
 
 function fallbackCandidates(lines) {
   const summary = sections(lines, 1, "Summary");
-  const why = sections(lines, 3, "Why").concat(sections(lines, 3, "Why?"));
+  let owner = null;
+  const legacyIntent = lines.map((line) => {
+    const current = heading(line);
+    if (current?.level === 1) owner = current.title;
+    return owner === null || owner === "Intent" ? line : "";
+  });
+  const why = sections(legacyIntent, 3, "Why").concat(sections(legacyIntent, 3, "Why?"));
   const candidates = summary.length ? summary : why;
   if (candidates.length !== 1) return [];
   const result = [];
