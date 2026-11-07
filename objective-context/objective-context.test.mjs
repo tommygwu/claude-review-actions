@@ -28,6 +28,17 @@ test("criteria and non-goals stay inside Intent and end at the next heading", ()
   assert.deepEqual(context.errors, []);
 });
 
+test("empty H1 and H4 headings end Intent and acceptance criteria", () => {
+  for (const [body, promisedBehaviors] of [
+    ["# Intent\n#\n### Acceptance Criteria\n- Outside Intent.", []],
+    ["# Intent\n### Acceptance Criteria\n- Real criterion.\n####\n- Outside criteria.", ["Real criterion."]],
+  ]) {
+    const context = extractObjectiveContext(body);
+    assert.deepEqual(context.promisedBehaviors, promisedBehaviors, body);
+    assert.deepEqual(context.nonGoals, [], body);
+  }
+});
+
 test("quoted, indented, wrong-level and differently cased headings do not create criteria", () => {
   const context = extractObjectiveContext(markdown(
     "# Summary", "Preserve the existing login.",
@@ -53,6 +64,67 @@ test("fenced and commented headings and bullets cannot change the objective", ()
   assert.equal(context.source, "structured");
   assert.deepEqual(context.promisedBehaviors, ["Keep the real criterion."]);
   assert.deepEqual(context.errors, []);
+});
+
+test("a fenced list-item example cannot create duplicate objective sections", () => {
+  for (const [opener, closer] of [["- ```markdown", "  ```"], ["1. ~~~markdown", "   ~~~"]]) {
+    const context = extractObjectiveContext(markdown(
+      "# Intent", "### Acceptance Criteria", "- Real criterion.",
+      opener, "  # Intent", "  ### Acceptance Criteria", "  - Example criterion.", closer,
+      "### Non-goals", "- Preserve sessions.",
+    ));
+    assert.deepEqual(context.promisedBehaviors, ["Real criterion."], opener);
+    assert.deepEqual(context.nonGoals, ["Preserve sessions."], opener);
+    assert.deepEqual(context.errors, [], opener);
+  }
+});
+
+test("an HTML comment opener in inline code preserves later criteria and non-goals", () => {
+  for (const criterion of ["Reject the literal `<!--` in a title.", "Reject ``<!-- with a ` inside`` in a title."]) {
+    const context = extractObjectiveContext(markdown(
+      "# Intent", "### Acceptance Criteria", `- ${criterion}`,
+      "- Preserve <!-- hidden text -->the audit record.",
+      "### Non-goals", "- Preserve sessions.",
+    ));
+    assert.deepEqual(context.promisedBehaviors, [criterion, "Preserve the audit record."], criterion);
+    assert.deepEqual(context.nonGoals, ["Preserve sessions."], criterion);
+    assert.deepEqual(context.errors, [], criterion);
+  }
+  const multiline = extractObjectiveContext(markdown(
+    "# Intent", "### Acceptance Criteria", "- Preserve `<!--", "  marker -->` literally.",
+    "- Keep later criterion.", "### Non-goals", "- Preserve sessions.",
+  ));
+  assert.deepEqual(multiline.promisedBehaviors, ["Preserve `<!--\n  marker -->` literally.", "Keep later criterion."]);
+  assert.deepEqual(multiline.nonGoals, ["Preserve sessions."]);
+  assert.deepEqual(multiline.errors, []);
+  const unmatched = extractObjectiveContext(markdown(
+    "# Intent", "### Acceptance Criteria", "- Keep an unmatched ` marker. <!-- hidden -->", "",
+    "### Non-goals", "- Preserve `sessions`.",
+  ));
+  assert.deepEqual(unmatched.promisedBehaviors, ["Keep an unmatched ` marker."]);
+  assert.deepEqual(unmatched.nonGoals, ["Preserve `sessions`."]);
+  const indentedHeading = extractObjectiveContext(markdown(
+    "# Intent", "### Acceptance Criteria", "- Preserve an unmatched ` marker.",
+    "  ### Non-goals", "  Example ` marker.", "- Preserve sessions.",
+  ));
+  assert.deepEqual(indentedHeading.promisedBehaviors, ["Preserve an unmatched ` marker."]);
+  assert.deepEqual(indentedHeading.nonGoals, ["Preserve sessions."]);
+});
+
+test("two multiline code spans preserve the criterion and finish extraction", () => {
+  const body = markdown(
+    "# Intent", "### Acceptance Criteria", "- Preserve `first", "  span` and `second", "  span` literally.",
+    "- Keep later criterion.", "### Non-goals", "- Preserve sessions.",
+  );
+  const source = `import { extractObjectiveContext } from ${JSON.stringify(path.join(HERE, "objective-context.mjs"))};
+    process.stdout.write(JSON.stringify(extractObjectiveContext(${JSON.stringify(body)})));`;
+  const result = spawnSync(process.execPath, ["--max-old-space-size=128", "--input-type=module", "-e", source], {
+    encoding: "utf8", timeout: 2000,
+  });
+  assert.equal(result.status, 0, result.error?.message ?? result.stderr);
+  const context = JSON.parse(result.stdout);
+  assert.deepEqual(context.promisedBehaviors, ["Preserve `first\n  span` and `second\n  span` literally.", "Keep later criterion."]);
+  assert.deepEqual(context.nonGoals, ["Preserve sessions."]);
 });
 
 test("each top-level bullet retains its continuation and nested items", () => {

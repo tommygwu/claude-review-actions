@@ -2,39 +2,80 @@ import { randomUUID } from "node:crypto";
 import { appendFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
+function openingFence(line) {
+  const match = line.match(/^( {0,3})((?:[-*+]|\d+[.)])[ \t]+)?(`{3,}|~{3,})(.*)$/);
+  if (!match || (match[3][0] === "`" && match[4].includes("`"))) return null;
+  return { marker: match[3], indentation: match[2] ? match[1].length + match[2].length : 0 };
+}
+
+function codeSpanEnd(text, start, delimiter) {
+  const runs = /`+/g;
+  runs.lastIndex = start;
+  let closing;
+  while ((closing = runs.exec(text))) {
+    if (closing[0] === delimiter) return closing.index + closing[0].length;
+  }
+  return -1;
+}
+
 function visibleLines(markdown) {
   let fence = null;
   let comment = false;
-  return markdown.replace(/\r\n?/g, "\n").split("\n").map((line) => {
+  let consumedThrough = -1;
+  return markdown.replace(/\r\n?/g, "\n").split("\n").map((line, index, lines) => {
+    if (index <= consumedThrough) return "";
     if (fence) {
-      const closing = line.match(/^ {0,3}(`{3,}|~{3,})\s*$/);
-      if (closing && closing[1][0] === fence[0] && closing[1].length >= fence.length) fence = null;
+      const closing = line.match(/^( *)(`{3,}|~{3,})\s*$/);
+      if (closing && closing[1].length >= fence.indentation && closing[1].length <= fence.indentation + 3
+          && closing[2][0] === fence.marker[0] && closing[2].length >= fence.marker.length) fence = null;
+      return "";
+    }
+    const opening = !comment && openingFence(line);
+    if (opening) {
+      fence = opening;
       return "";
     }
     let visible = "";
     let cursor = 0;
     while (cursor < line.length) {
-      const marker = line.indexOf(comment ? "-->" : "<!--", cursor);
-      if (marker < 0) {
+      const next = comment ? /-->/g : /<!--|`+/g;
+      next.lastIndex = cursor;
+      const marker = next.exec(line);
+      if (!marker) {
         if (!comment) visible += line.slice(cursor);
         break;
       }
-      if (!comment) visible += line.slice(cursor, marker);
-      cursor = marker + (comment ? 3 : 4);
-      comment = !comment;
+      if (!comment) visible += line.slice(cursor, marker.index);
+      cursor = marker.index + marker[0].length;
+      if (marker[0][0] === "`") {
+        let end = codeSpanEnd(line, cursor, marker[0]);
+        if (end < 0) {
+          let continued = line;
+          for (let next = Math.max(index, consumedThrough) + 1;
+            next < lines.length && /^(?: {2,}|\t)\S/.test(lines[next]) && !heading(lines[next]); next += 1) {
+            continued += `\n${lines[next]}`;
+            end = codeSpanEnd(continued, cursor, marker[0]);
+            if (end >= 0) {
+              line = continued;
+              consumedThrough = next;
+              break;
+            }
+          }
+        }
+        cursor = end < 0 ? cursor : end;
+        visible += line.slice(marker.index, cursor);
+      } else {
+        comment = !comment;
+      }
     }
-    const opening = visible.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
-    if (opening && !(opening[1][0] === "`" && opening[2].includes("`"))) {
-      fence = opening[1];
-      return "";
-    }
-    return visible;
+    fence = openingFence(visible);
+    return fence ? "" : visible;
   });
 }
 
 function heading(line) {
-  const match = line.match(/^ {0,3}(#{1,6})[ \t]+(.+?)\s*$/);
-  return match ? { level: match[1].length, title: match[2].replace(/[ \t]+#+[ \t]*$/, "") } : null;
+  const match = line.match(/^ {0,3}(#{1,6})(?:[ \t]+(.*?))?[ \t]*$/);
+  return match ? { level: match[1].length, title: (match[2] ?? "").replace(/[ \t]+#+[ \t]*$/, "") } : null;
 }
 
 function sections(lines, level, title) {
@@ -54,7 +95,7 @@ function bullets(lines) {
   let active = false;
   for (const line of lines) {
     if (heading(line)) break;
-    const match = line.match(/^(?:[-*+]|\d+[.)])[ \t]+(.+?)\s*$/);
+    const match = line.match(/^(?:[-*+]|\d+[.)])[ \t]+([\s\S]+?)\s*$/);
     if (match) {
       result.push(match[1]);
       active = true;
