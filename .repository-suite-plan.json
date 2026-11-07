@@ -23,6 +23,7 @@
       ],
       "inputs": [
         "review",
+        "objective-context",
         "classify-claude-review",
         "verify-claude-review",
         "scripts/run-node-tests.sh"

@@ -5,6 +5,7 @@ Shared GitHub composite actions for [`anthropics/claude-code-action`](https://gi
 | Action | Public contract |
 |---|---|
 | [`review`](review/README.md) | Run the reviewer with shared model, tool permissions, and workflow-skip detection. |
+| [`objective-context`](objective-context/README.md) | Extract acceptance criteria and non-goals from the PR body for the reviewer. |
 | [`verify-claude-review`](verify-claude-review/README.md) | Verify the review comment, classify a silent run, keep its transcript, and emit the failure marker. |
 | [`post-merge-cadence`](.github/actions/post-merge-cadence/README.md) | Decide when post-merge tests run and rerun the newest untested push when due. |
 
