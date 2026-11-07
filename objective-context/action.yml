@@ -1,0 +1,29 @@
+name: PR objective context
+description: Extract acceptance criteria and non-goals from a PR body for Claude review.
+
+inputs:
+  pr_body:
+    description: The current pull request body as Markdown. Empty means no objective.
+    required: false
+    default: ''
+
+outputs:
+  context:
+    description: JSON containing structured objectives, fallback candidates, validity, and errors.
+    value: ${{ steps.extract.outputs.context }}
+  objective:
+    description: Review-ready objective text, including source and extraction diagnostics.
+    value: ${{ steps.extract.outputs.objective }}
+  source:
+    description: structured, fallback, or none. Structured does not imply valid or satisfied.
+    value: ${{ steps.extract.outputs.source }}
+
+runs:
+  using: composite
+  steps:
+    - id: extract
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        PR_BODY: ${{ inputs.pr_body }}
+      run: node "$ACTION_PATH/objective-context.mjs"
