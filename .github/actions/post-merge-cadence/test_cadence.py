@@ -1,6 +1,8 @@
+import contextlib
 import copy
 import io
 import hashlib
+from http.client import IncompleteRead, InvalidURL
 import re
 import subprocess
 import json
@@ -27,6 +29,12 @@ BLOB = b"fixture\n"
 BLOB_ID = hashlib.sha1(f"blob {len(BLOB)}\0".encode() + BLOB).hexdigest()
 TREE = b"100644 fixture\0" + bytes.fromhex(BLOB_ID)
 TREE_ID = hashlib.sha1(f"tree {len(TREE)}\0".encode() + TREE).hexdigest()
+
+
+def setUpModule():
+    sleeper = patch.object(cadence, "sleep", lambda seconds: None)
+    sleeper.start()
+    unittest.addModuleCleanup(sleeper.stop)
 
 
 def clock(hours):
@@ -62,6 +70,20 @@ class Response:
         return self.payload
 
 
+class TruncatedResponse(Response):
+    def read(self):
+        raise IncompleteRead(b"", len(self.payload))
+
+
+class FailedRead(Response):
+    def __init__(self, error):
+        super().__init__({})
+        self.error = error
+
+    def read(self):
+        raise self.error
+
+
 class Transport:
     def __init__(self):
         self.routes = {}
@@ -85,6 +107,8 @@ class Transport:
         payload, links = self.routes[key]
         if callable(payload):
             payload = payload(request)
+        if isinstance(payload, Response):
+            return payload
         if isinstance(payload, Exception):
             if isinstance(payload, HTTPError):
                 payload.close()
@@ -713,6 +737,10 @@ class ApiContract(unittest.TestCase):
         self.patcher = patch.object(cadence, "urlopen", self.http)
         self.patcher.start()
         self.addCleanup(self.patcher.stop)
+        self.sleeps = []
+        sleeper = patch.object(cadence, "sleep", self.sleeps.append)
+        sleeper.start()
+        self.addCleanup(sleeper.stop)
 
     def test_jobs_and_workflows_follow_link_headers(self):
         for endpoint, field, method in (("/actions/workflows", "workflows", self.api.workflows),
@@ -760,13 +788,76 @@ class ApiContract(unittest.TestCase):
 
     def test_truncated_repeated_and_malformed_pages_fail_instead_of_clean_history(self):
         resource = "/actions/workflows?per_page=100"
-        cases = [({"total_count": 2, "workflows": [{"id": 1}]}, ""),
-                 ({"total_count": 2, "workflows": [{"id": 1}]}, f'<{ROOT}{resource}>; rel="next"'),
-                 ({"total_count": 1}, "")]
-        for payload, links in cases:
-            with self.subTest(payload=payload, links=links), self.assertRaises(ValueError):
+        looping = f'<{ROOT}{resource}&page=2>; rel="next"'
+        self.http.add(resource + "&page=2", {"total_count": 3, "workflows": [{"id": 2}]}, links=looping)
+        cases = [({"total_count": 2, "workflows": [{"id": 1}]}, "", cadence.SCAN_ATTEMPTS),
+                 ({"total_count": 3, "workflows": [{"id": 1}]}, looping, 2),
+                 ({"total_count": 3, "workflows": [{"id": 1}]}, f'<{ROOT}{resource}>; rel="next"', 1),
+                 ({"total_count": 1}, "", 1),
+                 ({"total_count": 1, "workflows": [{"id": 0}]}, "", 1)]
+        for payload, links, reads in cases:
+            with self.subTest(payload=payload, links=links):
                 self.http.add(resource, payload, links=links)
-                self.api.workflows()
+                self.http.calls = []
+                with self.assertRaises(ValueError):
+                    self.api.workflows()
+                self.assertEqual(reads, len(self.http.calls))
+
+    def warnings(self, call):
+        with contextlib.redirect_stderr(io.StringIO()) as log:
+            result = call()
+        return result, sum(line.startswith("::warning::") for line in log.getvalue().splitlines())
+
+    def test_each_kind_of_page_drift_is_rescanned_from_the_first_page_with_a_warning(self):
+        resource = "/actions/workflows?per_page=100"
+        clean = {"total_count": 2, "workflows": [{"id": 1}, {"id": 2}]}
+        second = f'<{ROOT}{resource}&page=2>; rel="next"'
+        drifts = {"count changed": (Response({"total_count": 2, "workflows": [{"id": 1}]}, second),
+                                    {"total_count": 3, "workflows": [{"id": 2}]}),
+                  "more rows than declared": (Response({"total_count": 1, "workflows": [{"id": 1}, {"id": 2}]}), None),
+                  "ended early": (Response({"total_count": 3, "workflows": [{"id": 1}, {"id": 2}]}), None)}
+        for name, (drifted, page_two) in drifts.items():
+            with self.subTest(drift=name):
+                scans = []
+                self.http.add(resource, lambda request: scans.append(request) or (drifted if len(scans) == 1 else clean))
+                if page_two:
+                    self.http.add(resource + "&page=2", page_two)
+                self.assertEqual((clean["workflows"], 1), self.warnings(self.api.workflows))
+                self.assertEqual(2, len(scans))
+
+    def test_transient_read_faults_are_reread_with_a_warning_but_client_and_permanent_faults_are_not(self):
+        resource = "/actions/workflows?per_page=100"
+        page = {"total_count": 1, "workflows": [{"id": 1}]}
+        faults = {"connection refused": URLError("refused"),
+                  "server error": HTTPError(ROOT, 502, "bad gateway", {}, None),
+                  "reset mid-body": FailedRead(ConnectionResetError("reset")),
+                  "timed out mid-body": FailedRead(TimeoutError("timed out"))}
+        for name, fault in faults.items():
+            with self.subTest(fault=name):
+                reads = []
+                self.http.add(resource, lambda request: reads.append(request) or (fault if len(reads) == 1 else page))
+                self.assertEqual((page["workflows"], 1), self.warnings(self.api.workflows))
+                self.assertEqual(2, len(reads))
+        queries = []
+        def graphql(text):
+            queries.append(text)
+            if len(queries) == 1:
+                raise ConnectionResetError("reset")
+            return {"data": {"nodes": []}}
+        self.http.graphql = graphql
+        self.assertEqual({"data": {"nodes": []}}, self.api.request("POST", self.api.graphql_url, {"query": "q"})[0])
+        self.assertEqual(2, len(queries))
+        self.http.calls, self.sleeps[:] = [], []
+        self.http.add(resource, HTTPError(ROOT, 404, "missing", {}, None))
+        with self.assertRaises(cadence.ApiError) as failure:
+            self.api.workflows()
+        self.assertEqual(404, failure.exception.code)
+        self.assertEqual((1, []), (len(self.http.calls), self.sleeps))
+        self.http.calls = []
+        self.http.add(resource, InvalidURL("control characters in URL"))
+        with self.assertRaises(Exception):
+            self.api.workflows()
+        self.assertEqual((1, []), (len(self.http.calls), self.sleeps))
 
     def test_invalid_totals_and_duplicate_run_pages_cannot_hide_history(self):
         resource = "/actions/workflows/1/runs?event=push&branch=main&per_page=100"
@@ -791,6 +882,47 @@ class ApiContract(unittest.TestCase):
                     self.http.add(resource + "&page=2", second)
                 with self.assertRaises(ValueError):
                     self.api.runs(1, "main")
+
+    def test_body_cut_mid_read_rereads_the_page_instead_of_failing_the_push(self):
+        resource = "/actions/workflows/1/runs?event=push&branch=main&per_page=100"
+        newest, older = run(2, "newest", 0)[0], run(1, "older", 1)[0]
+        page = {"total_count": 2, "workflow_runs": [newest, older]}
+        reads = []
+        self.http.add(resource, lambda request: reads.append(request) or (
+            TruncatedResponse(page) if len(reads) == 1 else page))
+        self.assertEqual([2, 1], [row["id"] for row in self.api.runs(1, "main")])
+        self.assertEqual(2, len(reads))
+        self.assertEqual([1], self.sleeps)
+
+    def test_push_arriving_mid_scan_rescans_instead_of_failing_on_shifted_pages(self):
+        resource = "/actions/workflows/1/runs?event=push&branch=main&per_page=100"
+        rows = {identifier: run(identifier, f"commit-{identifier}", 10 - identifier)[0] for identifier in range(1, 6)}
+        link = lambda page: f'<{ROOT}{resource}&page={page}>; rel="next"'
+        scans = []
+        def first(request):
+            scans.append(request)
+            if len(scans) == 1:
+                return Response({"total_count": 4, "workflow_runs": [rows[4], rows[3]]}, link(2))
+            return Response({"total_count": 5, "workflow_runs": [rows[5], rows[4]]}, link(2))
+        self.http.add(resource, first)
+        self.http.add(resource + "&page=2", lambda request: Response(
+            {"total_count": 4 if len(scans) == 1 else 5, "workflow_runs": [rows[3], rows[2]]}, link(3)))
+        self.http.add(resource + "&page=3", lambda request: Response(
+            {"total_count": 4 if len(scans) == 1 else 5, "workflow_runs": [rows[1]]}))
+        self.assertEqual([5, 4, 3, 2, 1], [row["id"] for row in self.api.runs(1, "main")])
+        self.assertEqual(2, len(scans))
+
+    def test_persistent_transport_failure_fails_after_bounded_reads_and_never_replays_writes(self):
+        self.http.add("/actions/workflows?per_page=100", lambda request: TruncatedResponse({}))
+        with self.assertRaisesRegex(ValueError, "GitHub API is unavailable"):
+            self.api.workflows()
+        self.assertEqual(cadence.READ_ATTEMPTS, len(self.http.calls))
+        self.http.calls = []
+        row = run(1, "a", 1)[0]
+        self.http.add("/actions/runs/1/rerun", ConnectionResetError("reset"), method="POST")
+        with self.assertRaises(ValueError):
+            self.api.rerun(row)
+        self.assertEqual(1, len(self.http.posts()))
 
     def test_rerun_races_defer_only_when_refetch_confirms_progress(self):
         row = run(1, "a", 1, attempt=2)[0]
@@ -831,6 +963,10 @@ class ApiContract(unittest.TestCase):
                 self.assertNotIn("upstream text", str(failure.exception))
                 if isinstance(error, HTTPError):
                     self.assertIn("GET /repos/owner/repo/actions/workflows", str(failure.exception))
+        self.http.add("/actions/runs/1/rerun", ConnectionResetError(TOKEN), method="POST")
+        with self.assertRaises(ValueError) as failure:
+            self.api.rerun(run(1, "a", 1)[0])
+        self.assertNotIn(TOKEN, str(failure.exception))
 
 
 class BatchedCheckContract(unittest.TestCase):

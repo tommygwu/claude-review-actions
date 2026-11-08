@@ -7,7 +7,9 @@ import subprocess
 import sys
 import tempfile
 from datetime import datetime, timedelta, timezone
+from http.client import BadStatusLine, IncompleteRead
 from pathlib import Path
+from time import sleep
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
@@ -18,6 +20,9 @@ CHECK_STATUSES = {"queued", "in_progress", "completed", "waiting", "requested", 
 CHECK_CONCLUSIONS = {"action_required", "cancelled", "failure", "neutral", "skipped", "stale",
                      "startup_failure", "success", "timed_out"}
 CHECK_SUITE_BATCH_SIZE = 20
+READ_ATTEMPTS = 3
+SCAN_ATTEMPTS = 3
+TRANSIENT_FAULTS = (IncompleteRead, BadStatusLine, ConnectionError, TimeoutError, URLError)
 
 
 def timestamp(value):
@@ -47,6 +52,10 @@ def check_state(record):
             or state.lower() == "completed" and not conclusion):
         raise ValueError("GitHub returned an invalid check lifecycle")
     return state.lower(), conclusion.lower() if conclusion else None
+
+
+class HistoryDrift(ValueError):
+    pass
 
 
 class ApiError(ValueError):
@@ -97,20 +106,45 @@ class GitHub:
                                    "Accept": "application/vnd.github+json",
                                    "Content-Type": "application/json",
                                    "X-GitHub-Api-Version": "2022-11-28"})
-        try:
-            with urlopen(request, timeout=30) as response:
-                payload = response.read()
-                return (json.loads(payload) if payload else {}, response.headers.get("Link", ""))
-        except HTTPError as error:
-            raise ApiError(error.code, method, urlsplit(url).path) from None
-        except URLError:
-            raise ValueError("GitHub API is unavailable") from None
+        path = urlsplit(url).path
+        reads = READ_ATTEMPTS if method == "GET" or url == self.graphql_url else 1
+        for attempt in range(1, reads + 1):
+            try:
+                with urlopen(request, timeout=30) as response:
+                    body = response.read()
+                    return (json.loads(body) if body else {}, response.headers.get("Link", ""))
+            except HTTPError as error:
+                error.close()
+                if error.code < 500 or attempt == reads:
+                    raise ApiError(error.code, method, path) from None
+                fault = f"HTTP {error.code}"
+            except TRANSIENT_FAULTS as error:
+                fault = type(error).__name__
+                if reads == 1:
+                    raise ValueError(f"GitHub API {method} {path} outcome is unknown ({fault}); "
+                                     "check the run before retrying it") from None
+                if attempt == reads:
+                    raise ValueError(f"GitHub API is unavailable: {method} {path} failed "
+                                     f"{reads} times ({fault})") from None
+            print(f"::warning::post-merge-cadence: rereading {method} {path} after {fault} "
+                  f"(attempt {attempt}/{reads})", file=sys.stderr)
+            sleep(attempt)
 
     def get(self, resource):
         return self.request("GET", resource)[0]
 
     def pages(self, resource, field, total_field="total_count", cap=None):
-        url = query(resource, per_page=100)
+        for attempt in range(1, SCAN_ATTEMPTS + 1):
+            try:
+                return self.scan(resource, field, total_field, cap)
+            except HistoryDrift as drift:
+                if attempt == SCAN_ATTEMPTS:
+                    raise
+                print(f"::warning::post-merge-cadence: rereading {urlsplit(resource).path} from its first page "
+                      f"after {drift} (scan {attempt}/{SCAN_ATTEMPTS})", file=sys.stderr)
+
+    def scan(self, resource, field, total_field, cap):
+        url = query(resource if resource.startswith("https://") else self.root + resource, per_page=100)
         seen = set()
         identities = set()
         rows = []
@@ -126,21 +160,22 @@ class GitHub:
             if total is None:
                 total = data[total_field]
             elif data[total_field] != total:
-                raise ValueError("GitHub history count changed during pagination")
+                raise HistoryDrift("GitHub history count changed during pagination")
             for row in data[field]:
-                if (not isinstance(row, dict) or type(row.get("id")) is not int or row["id"] <= 0
-                        or row["id"] in identities):
-                    raise ValueError("GitHub history contains invalid or duplicate record identities")
+                if not isinstance(row, dict) or type(row.get("id")) is not int or row["id"] <= 0:
+                    raise ValueError("GitHub history contains invalid record identities")
+                if row["id"] in identities:
+                    raise HistoryDrift("GitHub history contains duplicate record identities")
                 identities.add(row["id"])
             rows.extend(data[field])
             if len(rows) > total:
-                raise ValueError("GitHub history contains more records than its declared count")
+                raise HistoryDrift("GitHub history contains more records than its declared count")
             if cap and len(rows) >= cap:
                 break
             url = next((part.split(";", 1)[0].strip()[1:-1]
                         for part in links.split(",") if 'rel="next"' in part), None)
         if len(rows) < min(total, cap or total):
-            raise ValueError("GitHub history pagination ended before all records arrived")
+            raise HistoryDrift("GitHub history pagination ended before all records arrived")
         return rows, total
 
     def workflows(self):
