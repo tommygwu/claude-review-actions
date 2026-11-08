@@ -4,6 +4,7 @@ import io
 import hashlib
 from http.client import IncompleteRead, InvalidURL
 import re
+import ssl
 import subprocess
 import json
 import os
@@ -404,7 +405,10 @@ class Checker(unittest.TestCase):
             with self.subTest(failure=type(failure).__name__):
                 scenario = Scenario([run(3, "candidate", 0), run(1, "tested", 5, tested=True)])
                 scenario.http.add("/actions/workflows/1/runs?event=push&branch=main&per_page=1", failure)
-                scenario.execute()
+                with contextlib.redirect_stderr(io.StringIO()) as log:
+                    scenario.execute()
+                self.assertIn("::warning::post-merge-cadence: covered-head check fell back to full history",
+                              log.getvalue())
                 self.assertEqual([ROOT + "/actions/runs/3/rerun"], scenario.http.posts())
                 self.assertTrue(any("per_page=100" in request.full_url and "/workflows/1/runs?" in request.full_url
                                     for request in scenario.http.calls))
@@ -923,6 +927,14 @@ class ApiContract(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.api.rerun(row)
         self.assertEqual(1, len(self.http.posts()))
+
+    def test_transport_fault_names_its_reason_class_without_its_text(self):
+        self.http.add("/actions/workflows?per_page=100", URLError(ssl.SSLCertVerificationError(1, TOKEN)))
+        with contextlib.redirect_stderr(io.StringIO()) as log, self.assertRaises(ValueError) as failure:
+            self.api.workflows()
+        for text in (str(failure.exception), log.getvalue()):
+            self.assertIn("URLError(SSLCertVerificationError)", text)
+            self.assertNotIn(TOKEN, text)
 
     def test_rerun_races_defer_only_when_refetch_confirms_progress(self):
         row = run(1, "a", 1, attempt=2)[0]
