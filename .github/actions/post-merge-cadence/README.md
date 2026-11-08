@@ -42,11 +42,12 @@ It excludes the current push and preserves the earliest arrival of each uncovere
 The first merge after a quiet period therefore passes.
 Malformed settings, an omitted interval-check workflow list, missing or ambiguous workflow names, incomplete history, and API errors fail the action instead of assuming coverage.
 Reads retry a dropped connection, a cut-off body, or an HTTP 5xx up to three times; a rerun request is never repeated.
+Each retry warning and the final failure name the fault's exception class and, for a connection fault, its reason class, such as `URLError(SSLCertVerificationError)`, but never upstream error text.
 A run list that shifts while it pages, such as a push that lands mid-scan, is reread from its first page up to three times before it fails as incomplete history.
 Enabled interval checks first read one newest push candidate.
 A completed, non-cancelled candidate skips full history only after its actual checks and attempts prove coverage, its run still matches, and a second newest-push read matches the original snapshot.
 This covered-head path reads no older workflow history and fetches no commit graph.
-An uncertain candidate or failed fast-path read uses the complete-history path.
+An uncertain candidate or failed fast-path read uses the complete-history path; a failed read also writes a warning that names its error.
 Filtered run lists are read in created-at windows beyond GitHub's 1,000-result cap.
 GraphQL batches paginate every available check run in each needed suite across attempts; incomplete or mismatched records fail instead of supplying negative evidence.
 The latest tested tip's complete ancestry rules out covered older runs before more check-suite or attempt reads; histories without tests are still read completely.

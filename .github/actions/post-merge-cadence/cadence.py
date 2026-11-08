@@ -119,7 +119,9 @@ class GitHub:
                     raise ApiError(error.code, method, path) from None
                 fault = f"HTTP {error.code}"
             except TRANSIENT_FAULTS as error:
-                fault = type(error).__name__
+                reason = getattr(error, "reason", None)
+                fault = type(error).__name__ + (f"({type(reason).__name__})"
+                                                if isinstance(reason, BaseException) else "")
                 if reads == 1:
                     raise ValueError(f"GitHub API {method} {path} outcome is unknown ({fault}); "
                                      "check the run before retrying it") from None
@@ -524,7 +526,9 @@ def newest_covered(api, workflow_id, branch, excluded):
         latest = api.newest_run(workflow_id, branch)
         return (tuple(current[key] for key in identity) == original
                 and latest is not None and tuple(latest[key] for key in identity) == original)
-    except (ValueError, KeyError, TypeError, AttributeError, OSError, OverflowError):
+    except (ValueError, KeyError, TypeError, AttributeError, OSError, OverflowError) as error:
+        print(f"::warning::post-merge-cadence: covered-head check fell back to full history "
+              f"({type(error).__name__}: {error})", file=sys.stderr)
         return False
 
 
