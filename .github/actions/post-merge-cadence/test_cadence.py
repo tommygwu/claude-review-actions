@@ -791,6 +791,7 @@ class ApiContract(unittest.TestCase):
         self.http.add(resource + "&page=2", {"total_count": 3, "workflows": [{"id": 2}]}, links=looping)
         cases = [({"total_count": 2, "workflows": [{"id": 1}]}, "", cadence.SCAN_ATTEMPTS),
                  ({"total_count": 3, "workflows": [{"id": 1}]}, looping, 2),
+                 ({"total_count": 3, "workflows": [{"id": 1}]}, f'<{ROOT}{resource}>; rel="next"', 1),
                  ({"total_count": 1}, "", 1),
                  ({"total_count": 1, "workflows": [{"id": 0}]}, "", 1)]
         for payload, links, reads in cases:

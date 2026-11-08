@@ -132,7 +132,7 @@ class GitHub:
                     raise
 
     def scan(self, resource, field, total_field, cap):
-        url = query(resource, per_page=100)
+        url = query(resource if resource.startswith("https://") else self.root + resource, per_page=100)
         seen = set()
         identities = set()
         rows = []
