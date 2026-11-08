@@ -7,10 +7,10 @@ import subprocess
 import sys
 import tempfile
 from datetime import datetime, timedelta, timezone
-from http.client import HTTPException
+from http.client import BadStatusLine, IncompleteRead
 from pathlib import Path
 from time import sleep
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
@@ -22,6 +22,7 @@ CHECK_CONCLUSIONS = {"action_required", "cancelled", "failure", "neutral", "skip
 CHECK_SUITE_BATCH_SIZE = 20
 READ_ATTEMPTS = 3
 SCAN_ATTEMPTS = 3
+TRANSIENT_FAULTS = (IncompleteRead, BadStatusLine, ConnectionError, TimeoutError, URLError)
 
 
 def timestamp(value):
@@ -105,6 +106,7 @@ class GitHub:
                                    "Accept": "application/vnd.github+json",
                                    "Content-Type": "application/json",
                                    "X-GitHub-Api-Version": "2022-11-28"})
+        path = urlsplit(url).path
         reads = READ_ATTEMPTS if method == "GET" or url == self.graphql_url else 1
         for attempt in range(1, reads + 1):
             try:
@@ -114,10 +116,18 @@ class GitHub:
             except HTTPError as error:
                 error.close()
                 if error.code < 500 or attempt == reads:
-                    raise ApiError(error.code, method, urlsplit(url).path) from None
-            except (HTTPException, OSError):
+                    raise ApiError(error.code, method, path) from None
+                fault = f"HTTP {error.code}"
+            except TRANSIENT_FAULTS as error:
+                fault = type(error).__name__
+                if reads == 1:
+                    raise ValueError(f"GitHub API {method} {path} outcome is unknown ({fault}); "
+                                     "check the run before retrying it") from None
                 if attempt == reads:
-                    raise ValueError("GitHub API is unavailable") from None
+                    raise ValueError(f"GitHub API is unavailable: {method} {path} failed "
+                                     f"{reads} times ({fault})") from None
+            print(f"::warning::post-merge-cadence: rereading {method} {path} after {fault} "
+                  f"(attempt {attempt}/{reads})", file=sys.stderr)
             sleep(attempt)
 
     def get(self, resource):
@@ -127,9 +137,11 @@ class GitHub:
         for attempt in range(1, SCAN_ATTEMPTS + 1):
             try:
                 return self.scan(resource, field, total_field, cap)
-            except HistoryDrift:
+            except HistoryDrift as drift:
                 if attempt == SCAN_ATTEMPTS:
                     raise
+                print(f"::warning::post-merge-cadence: rereading {urlsplit(resource).path} from its first page "
+                      f"after {drift} (scan {attempt}/{SCAN_ATTEMPTS})", file=sys.stderr)
 
     def scan(self, resource, field, total_field, cap):
         url = query(resource if resource.startswith("https://") else self.root + resource, per_page=100)
