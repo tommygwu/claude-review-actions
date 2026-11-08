@@ -1,7 +1,8 @@
+import contextlib
 import copy
 import io
 import hashlib
-from http.client import IncompleteRead
+from http.client import IncompleteRead, InvalidURL
 import re
 import subprocess
 import json
@@ -802,7 +803,12 @@ class ApiContract(unittest.TestCase):
                     self.api.workflows()
                 self.assertEqual(reads, len(self.http.calls))
 
-    def test_each_kind_of_page_drift_is_rescanned_from_the_first_page(self):
+    def warnings(self, call):
+        with contextlib.redirect_stderr(io.StringIO()) as log:
+            result = call()
+        return result, sum(line.startswith("::warning::") for line in log.getvalue().splitlines())
+
+    def test_each_kind_of_page_drift_is_rescanned_from_the_first_page_with_a_warning(self):
         resource = "/actions/workflows?per_page=100"
         clean = {"total_count": 2, "workflows": [{"id": 1}, {"id": 2}]}
         second = f'<{ROOT}{resource}&page=2>; rel="next"'
@@ -816,20 +822,21 @@ class ApiContract(unittest.TestCase):
                 self.http.add(resource, lambda request: scans.append(request) or (drifted if len(scans) == 1 else clean))
                 if page_two:
                     self.http.add(resource + "&page=2", page_two)
-                self.assertEqual(clean["workflows"], self.api.workflows())
+                self.assertEqual((clean["workflows"], 1), self.warnings(self.api.workflows))
                 self.assertEqual(2, len(scans))
 
-    def test_transient_faults_on_reads_are_reread_but_client_errors_are_not(self):
+    def test_transient_read_faults_are_reread_with_a_warning_but_client_and_permanent_faults_are_not(self):
         resource = "/actions/workflows?per_page=100"
         page = {"total_count": 1, "workflows": [{"id": 1}]}
         faults = {"connection refused": URLError("refused"),
                   "server error": HTTPError(ROOT, 502, "bad gateway", {}, None),
-                  "reset mid-body": FailedRead(ConnectionResetError("reset"))}
+                  "reset mid-body": FailedRead(ConnectionResetError("reset")),
+                  "timed out mid-body": FailedRead(TimeoutError("timed out"))}
         for name, fault in faults.items():
             with self.subTest(fault=name):
                 reads = []
                 self.http.add(resource, lambda request: reads.append(request) or (fault if len(reads) == 1 else page))
-                self.assertEqual(page["workflows"], self.api.workflows())
+                self.assertEqual((page["workflows"], 1), self.warnings(self.api.workflows))
                 self.assertEqual(2, len(reads))
         queries = []
         def graphql(text):
@@ -845,6 +852,11 @@ class ApiContract(unittest.TestCase):
         with self.assertRaises(cadence.ApiError) as failure:
             self.api.workflows()
         self.assertEqual(404, failure.exception.code)
+        self.assertEqual((1, []), (len(self.http.calls), self.sleeps))
+        self.http.calls = []
+        self.http.add(resource, InvalidURL("control characters in URL"))
+        with self.assertRaises(Exception):
+            self.api.workflows()
         self.assertEqual((1, []), (len(self.http.calls), self.sleeps))
 
     def test_invalid_totals_and_duplicate_run_pages_cannot_hide_history(self):
@@ -951,6 +963,10 @@ class ApiContract(unittest.TestCase):
                 self.assertNotIn("upstream text", str(failure.exception))
                 if isinstance(error, HTTPError):
                     self.assertIn("GET /repos/owner/repo/actions/workflows", str(failure.exception))
+        self.http.add("/actions/runs/1/rerun", ConnectionResetError(TOKEN), method="POST")
+        with self.assertRaises(ValueError) as failure:
+            self.api.rerun(run(1, "a", 1)[0])
+        self.assertNotIn(TOKEN, str(failure.exception))
 
 
 class BatchedCheckContract(unittest.TestCase):
