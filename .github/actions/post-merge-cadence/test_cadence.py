@@ -1,6 +1,7 @@
 import copy
 import io
 import hashlib
+from http.client import IncompleteRead
 import re
 import subprocess
 import json
@@ -27,6 +28,12 @@ BLOB = b"fixture\n"
 BLOB_ID = hashlib.sha1(f"blob {len(BLOB)}\0".encode() + BLOB).hexdigest()
 TREE = b"100644 fixture\0" + bytes.fromhex(BLOB_ID)
 TREE_ID = hashlib.sha1(f"tree {len(TREE)}\0".encode() + TREE).hexdigest()
+
+
+def setUpModule():
+    sleeper = patch.object(cadence, "sleep", lambda seconds: None)
+    sleeper.start()
+    unittest.addModuleCleanup(sleeper.stop)
 
 
 def clock(hours):
@@ -62,6 +69,11 @@ class Response:
         return self.payload
 
 
+class TruncatedResponse(Response):
+    def read(self):
+        raise IncompleteRead(b"", len(self.payload))
+
+
 class Transport:
     def __init__(self):
         self.routes = {}
@@ -85,6 +97,8 @@ class Transport:
         payload, links = self.routes[key]
         if callable(payload):
             payload = payload(request)
+        if isinstance(payload, Response):
+            return payload
         if isinstance(payload, Exception):
             if isinstance(payload, HTTPError):
                 payload.close()
@@ -713,6 +727,10 @@ class ApiContract(unittest.TestCase):
         self.patcher = patch.object(cadence, "urlopen", self.http)
         self.patcher.start()
         self.addCleanup(self.patcher.stop)
+        self.sleeps = []
+        sleeper = patch.object(cadence, "sleep", self.sleeps.append)
+        sleeper.start()
+        self.addCleanup(sleeper.stop)
 
     def test_jobs_and_workflows_follow_link_headers(self):
         for endpoint, field, method in (("/actions/workflows", "workflows", self.api.workflows),
@@ -791,6 +809,47 @@ class ApiContract(unittest.TestCase):
                     self.http.add(resource + "&page=2", second)
                 with self.assertRaises(ValueError):
                     self.api.runs(1, "main")
+
+    def test_body_cut_mid_read_rereads_the_page_instead_of_failing_the_push(self):
+        resource = "/actions/workflows/1/runs?event=push&branch=main&per_page=100"
+        newest, older = run(2, "newest", 0)[0], run(1, "older", 1)[0]
+        page = {"total_count": 2, "workflow_runs": [newest, older]}
+        reads = []
+        self.http.add(resource, lambda request: reads.append(request) or (
+            TruncatedResponse(page) if len(reads) == 1 else page))
+        self.assertEqual([2, 1], [row["id"] for row in self.api.runs(1, "main")])
+        self.assertEqual(2, len(reads))
+        self.assertEqual([1], self.sleeps)
+
+    def test_push_arriving_mid_scan_rescans_instead_of_failing_on_shifted_pages(self):
+        resource = "/actions/workflows/1/runs?event=push&branch=main&per_page=100"
+        rows = {identifier: run(identifier, f"commit-{identifier}", 10 - identifier)[0] for identifier in range(1, 6)}
+        link = lambda page: f'<{ROOT}{resource}&page={page}>; rel="next"'
+        scans = []
+        def first(request):
+            scans.append(request)
+            if len(scans) == 1:
+                return Response({"total_count": 4, "workflow_runs": [rows[4], rows[3]]}, link(2))
+            return Response({"total_count": 5, "workflow_runs": [rows[5], rows[4]]}, link(2))
+        self.http.add(resource, first)
+        self.http.add(resource + "&page=2", lambda request: Response(
+            {"total_count": 4 if len(scans) == 1 else 5, "workflow_runs": [rows[3], rows[2]]}, link(3)))
+        self.http.add(resource + "&page=3", lambda request: Response(
+            {"total_count": 4 if len(scans) == 1 else 5, "workflow_runs": [rows[1]]}))
+        self.assertEqual([5, 4, 3, 2, 1], [row["id"] for row in self.api.runs(1, "main")])
+        self.assertEqual(2, len(scans))
+
+    def test_persistent_transport_failure_fails_after_bounded_reads_and_never_replays_writes(self):
+        self.http.add("/actions/workflows?per_page=100", lambda request: TruncatedResponse({}))
+        with self.assertRaisesRegex(ValueError, "GitHub API is unavailable"):
+            self.api.workflows()
+        self.assertEqual(cadence.READ_ATTEMPTS, len(self.http.calls))
+        self.http.calls = []
+        row = run(1, "a", 1)[0]
+        self.http.add("/actions/runs/1/rerun", ConnectionResetError("reset"), method="POST")
+        with self.assertRaises(ValueError):
+            self.api.rerun(row)
+        self.assertEqual(1, len(self.http.posts()))
 
     def test_rerun_races_defer_only_when_refetch_confirms_progress(self):
         row = run(1, "a", 1, attempt=2)[0]

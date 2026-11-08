@@ -41,6 +41,8 @@ On interval push attempt 1, `decide` fails when an earlier uncovered commit has 
 It excludes the current push and preserves the earliest arrival of each uncovered commit across later merges.
 The first merge after a quiet period therefore passes.
 Malformed settings, an omitted interval-check workflow list, missing or ambiguous workflow names, incomplete history, and API errors fail the action instead of assuming coverage.
+Reads retry a dropped connection, a cut-off body, or an HTTP 5xx up to three times; a rerun request is never repeated.
+A run list that shifts while it pages, such as a push that lands mid-scan, is reread from its first page up to three times before it fails as incomplete history.
 Enabled interval checks first read one newest push candidate.
 A completed, non-cancelled candidate skips full history only after its actual checks and attempts prove coverage, its run still matches, and a second newest-push read matches the original snapshot.
 This covered-head path reads no older workflow history and fetches no commit graph.
