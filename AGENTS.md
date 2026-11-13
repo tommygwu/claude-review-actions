@@ -11,7 +11,7 @@ Read the public contract and its owners for the task:
 | Change validation or runtime | [.repository.json](.repository.json), [.node-version](.node-version), [suite plan](.repository-suite-plan.json) and [dependency setup](scripts/setup-schema-tests.mjs), and [CI](.github/workflows/test.yml). |
 
 Keep public inputs, outputs, and failure semantics beside each action.
-Claude review is best-effort: a posted `claude[bot]` comment is success; red means no comment was posted.
+Follow the verifier’s [best-effort review policy](verify-claude-review/README.md#best-effort-review-policy).
 Classification supplies diagnostics; `verify-claude-review` owns comment verification.
 
 Use the Node and Python versions in `.node-version` and `.python-version`.

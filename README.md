@@ -9,7 +9,7 @@ Shared GitHub composite actions for [`anthropics/claude-code-action`](https://gi
 | [`verify-claude-review`](verify-claude-review/README.md) | Verify the review comment, classify a silent run, keep its transcript, and emit the failure marker. |
 | [`post-merge-cadence`](.github/actions/post-merge-cadence/README.md) | Decide when post-merge tests run and rerun the newest untested push when due. |
 
-Claude review is best-effort: a posted `claude[bot]` comment counts as success; red means no comment was posted.
+See the verifier’s [best-effort review policy](verify-claude-review/README.md#best-effort-review-policy).
 `verify-claude-review` checks comment delivery; action outcomes and failure classes alone do not prove delivery.
 Its [classifier module](classify-claude-review/README.md) owns the failure-class vocabulary.
 

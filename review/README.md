@@ -25,8 +25,7 @@ It selects `--model claude-opus-5-5` and disables `Agent,Task` tools because bac
           # ...
 ```
 
-[`verify-claude-review`](../verify-claude-review/README.md#usage) then checks whether a `claude[bot]` comment was posted and owns the job's only red condition.
-Claude review is best-effort: that comment counts as success; red means no comment was posted.
+[`verify-claude-review`](../verify-claude-review/README.md#usage) then verifies comment delivery under its [best-effort review policy](../verify-claude-review/README.md#best-effort-review-policy).
 `continue-on-error` lets verification run after an action failure; pass `outcome`, because `conclusion` becomes `success`.
 
 The caller owns the prompt, token, additional tools, and step environment.

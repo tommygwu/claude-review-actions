@@ -1,6 +1,9 @@
 # verify-claude-review
 
 Composite action that owns the whole post-review sequence: verify, classify, keep the transcript, and report.
+
+## Best-effort review policy
+
 Claude review is best-effort: a `claude[bot]` comment created in this run's window is success; red means no comment was posted.
 
 ## Usage
@@ -48,7 +51,8 @@ Give every later step in the job `continue-on-error: true`, so only this step ca
 | `pr_number` | no | Defaults to `github.event.pull_request.number`. |
 | `expect_comment` | no | `"false"` for a dry run that renders instead of posting; the action then passes without verifying. Default `"true"`. |
 
-The output `class` is empty when a comment was verified; otherwise it holds the failure class.
+The output `class` is empty after verified comment delivery or an intentional dry run with `expect_comment=false`; otherwise it holds the failure class.
+An empty `class` alone is not proof that a comment was delivered.
 
 ## Decision
 

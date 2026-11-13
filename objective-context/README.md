@@ -99,7 +99,7 @@ Consumers that already build review context can merge these fields without repla
 - With an empty body or no usable objective, emit `source: none` and explicit no-objective text. Do not invent criteria. Continue to check extracted non-goals even when no positive objective exists.
 
 Malformed sections are diagnostic data, not action failures. Runtime or output-file errors fail the step; the usage pattern keeps review delivery running and makes missing context visible.
-`verify-claude-review` still owns success: a posted `claude[bot]` comment counts; red means no comment was posted.
+The verifier’s [best-effort review policy](../verify-claude-review/README.md#best-effort-review-policy) still governs review success.
 
 ## Adoption order
 
