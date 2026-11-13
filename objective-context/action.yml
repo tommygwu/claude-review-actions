@@ -15,7 +15,9 @@ outputs:
     description: Review-ready objective text, including source and extraction diagnostics.
     value: ${{ steps.extract.outputs.objective }}
   source:
-    description: structured, fallback, or none. Structured does not imply valid or satisfied.
+    description: >-
+      structured, fallback, or none, describing positive-objective extraction.
+      Structured does not imply valid or satisfied; non-goals may exist with none.
     value: ${{ steps.extract.outputs.source }}
 
 runs:

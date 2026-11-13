@@ -13,12 +13,15 @@ inputs:
   allowed_tools:
     description: >-
       Comma-separated Claude Code permission rules, passed as --allowed-tools.
-      They add to the action's read-only base tool set.
+      They add to the action's read-only base tool set. One line with no
+      double quotes, CR, or LF.
     required: true
   review_file:
     description: >-
-      Optional repository-root filename for the review body. Prepares a regular
-      file and grants access through an anchored Edit rule, including Write.
+      Optional repository-root filename for the review body: starts with a
+      letter or digit and contains only letters, digits, `.`, `_`, or `-`.
+      Prepares a regular file and grants access through an anchored Edit rule,
+      including Write. Empty adds no file or permission.
     required: false
     default: ''
 

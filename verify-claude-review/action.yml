@@ -47,8 +47,10 @@ inputs:
 outputs:
   class:
     description: >-
-      Empty when a comment was verified; otherwise the failure class, one of
-      the non-completed values in classify-claude-review/failure-classes.json.
+      Empty when a comment was verified or after an intentional dry run
+      (expect_comment "false"), so empty alone does not prove delivery;
+      otherwise the failure class, one of the non-completed values in
+      classify-claude-review/failure-classes.json.
     value: ${{ steps.evaluate.outputs.class }}
 
 runs:
