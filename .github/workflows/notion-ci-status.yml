@@ -5,7 +5,7 @@ on:
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review, labeled]
   workflow_run:
-    workflows: ['*', '!Notion CI status']
+    workflows: ['*', '!Notion CI status', '!Claude Code Review', '!Claude Code', '!Companion Merge Check', '!Companion Merge Marker']
     types: [in_progress, completed]
 
 permissions:
