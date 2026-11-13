@@ -10,7 +10,7 @@ import { pathToFileURL } from "node:url";
 // reports "Workflow validation failed": the running workflow file differs from
 // the default branch's copy. It sets `skipped_due_to_workflow_validation_mismatch`
 // on its inner step, but the root action does not expose that output, so this
-// script infers the skip from what is exposed (see review/README.md).
+// script infers the skip from what is exposed (see the README's workflow-skip detection section).
 //
 // Verified against anthropics/claude-code-action src/entrypoints/run.ts and
 // src/github/token.ts at v1 (2026-09): with a non-empty prompt, the only path

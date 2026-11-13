@@ -1,17 +1,18 @@
 # Maintenance
 
-Read the public contract and its owners for the task:
+[README.md](README.md) is the caller contract, and each `action.yml` owns its inputs and outputs.
+Change them in the same commit as the behavior they describe; add no per-action README.
 
 | Task | Read |
 |---|---|
-| Change reviewer defaults, permissions, or skip detection | [review/README.md](review/README.md), [action.yml](review/action.yml), and the affected `review/*.mjs` files and tests. |
-| Change comment verification or the failure marker | [verify-claude-review/README.md](verify-claude-review/README.md), its [action.yml](verify-claude-review/action.yml), script, and tests. |
-| Change classification or diagnostics | [classify-claude-review/README.md](classify-claude-review/README.md), its [vocabulary](classify-claude-review/failure-classes.json), module, and tests, plus the [verify-claude-review](verify-claude-review/README.md) annotations. |
-| Change post-merge test cadence | [post-merge-cadence/README.md](.github/actions/post-merge-cadence/README.md), its action manifest, Python script, recorded fixtures, and tests, plus validation wiring. |
+| Change reviewer defaults, permissions, or skip detection | The README `review` section, [action.yml](review/action.yml), and the affected `review/*.mjs` files and tests. |
+| Change objective extraction | The README `objective-context` section, its [action.yml](objective-context/action.yml), module, and tests. |
+| Change comment verification or the failure marker | The README `verify-claude-review` section, its [action.yml](verify-claude-review/action.yml), script, and tests. |
+| Change classification or diagnostics | The README failure-classes section, the [vocabulary](classify-claude-review/failure-classes.json), module, and tests, plus the `verify-claude-review` annotations. |
+| Change post-merge test cadence | The README `post-merge-cadence` section, its [action.yml](.github/actions/post-merge-cadence/action.yml), Python script, recorded fixtures, and tests, plus validation wiring. |
 | Change validation or runtime | [.repository.json](.repository.json), [.node-version](.node-version), [suite plan](.repository-suite-plan.json) and [dependency setup](scripts/setup-schema-tests.mjs), and [CI](.github/workflows/test.yml). |
 
-Keep public inputs, outputs, and failure semantics beside each action.
-Claude review is best-effort: a posted `claude[bot]` comment is success; red means no comment was posted.
+The README's [best-effort review policy](README.md#best-effort-review-policy) is the only statement of success and red; link to it instead of restating it.
 Classification supplies diagnostics; `verify-claude-review` owns comment verification.
 
 Use the Node and Python versions in `.node-version` and `.python-version`.

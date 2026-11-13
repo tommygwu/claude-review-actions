@@ -5,15 +5,15 @@ inputs:
     description: decide or check
     default: decide
   post-merge-ci:
-    description: Explicit true or false for push decisions and checks; non-push decisions ignore it.
+    description: Explicit true or false (case-insensitive) for push decisions and checks; non-push decisions ignore it.
   cadence:
     description: every-merge, newest-merge, or interval; required for push decisions and enabled checks.
   interval-hours:
     description: Positive whole hours for interval pushes and enabled interval checks.
   test-workflows:
-    description: Workflow names, one per line; required for interval check. Decide uses the current workflow.
+    description: Exact workflow names, one per line; required for enabled interval checks, which evaluate each independently. Decide uses the current workflow.
   non-test-jobs:
-    description: Job names to exclude from tested coverage, one per line.
+    description: Exact job names to exclude from tested coverage, one per line; post-merge-config is always excluded.
   github-token:
     description: github.token with contents and checks read plus actions read for decide, or actions write for check.
     required: true
