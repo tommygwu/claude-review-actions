@@ -76,6 +76,18 @@
         "lane": "fast",
         "inputs": [
           ".github/actions/post-merge-cadence/**",
+          "lib/**",
+          "scripts/run-python.mjs"
+        ]
+      },
+      "toolkit-actions": {
+        "lane": "fast",
+        "inputs": [
+          "agents-toolkit-fetch/**",
+          "agents-toolkit/**",
+          "agents-census/**",
+          "lib/**",
+          "scripts/run-toolkit-tests.py",
           "scripts/run-python.mjs"
         ]
       }

@@ -1,6 +1,6 @@
 # claude-review-actions
 
-Shared GitHub composite actions for [`anthropics/claude-code-action`](https://github.com/anthropics/claude-code-action) PR reviews and CI cadence.
+Shared GitHub composite actions for [`anthropics/claude-code-action`](https://github.com/anthropics/claude-code-action) PR reviews, CI cadence, and the agents toolkit that consumer CI borrows.
 Each action's `action.yml` owns its inputs and outputs; this guide owns how callers wire them.
 
 | Action | Purpose |
@@ -10,6 +10,9 @@ Each action's `action.yml` owns its inputs and outputs; this guide owns how call
 | [`verify-claude-review`](#verify-claude-review) | Verify the review comment, classify a silent run, keep its transcript, and emit the failure marker. |
 | [`.github/actions/post-merge-cadence`](#post-merge-cadence) | Decide when post-merge tests run and rerun the newest untested push when due. |
 | [`.github/actions/ci-run-context`](.github/actions/ci-run-context/action.yml) | Retain allowlisted event identity independently of job census. |
+| [`agents-toolkit-fetch`](#agents-toolkit-fetch) | Resolve this run's agents revision and archive the toolkit files a profile lists. |
+| [`agents-toolkit`](#agents-toolkit) | Unpack the toolkit in a test job and provision its own Node and Python without changing `PATH`. |
+| [`agents-census`](#agents-census) | Record every job of the run attempt and its result, so a skipped or failed job cannot pass silently. |
 
 `v1` tracks compatible releases; pin a full commit SHA to control updates.
 For maintenance and validation, see [AGENTS.md](AGENTS.md).
@@ -287,3 +290,103 @@ Coverage uses one temporary bare Git repository per invocation, fetching only ve
 Git commit ancestry includes divergent tested tips and stays separate for each workflow, even when object storage is shared.
 The temporary repository is deleted on exit; credentials stay in the process environment, outside URLs, command arguments, and files.
 Git must be installed; a failed fetch or incomplete graph fails the action.
+
+## Agents toolkit
+
+The agents toolkit is the set of agents-repository scripts and settings that consumer CI borrows.
+One toolkit job runs `agents-toolkit-fetch` with the read key; each test job runs `agents-toolkit`, which needs no key; the last job runs `agents-census`.
+A toolkit change then ships with one `v1` move instead of one pull request per repository.
+
+```yaml
+jobs:
+  toolkit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      revision: ${{ steps.fetch.outputs.revision }}
+    steps:
+      - id: fetch
+        uses: tommygwu/claude-review-actions/agents-toolkit-fetch@v1
+        with:
+          deploy-key: ${{ secrets.AGENTS_PACKAGE_DEPLOY_KEY }}
+  test:
+    needs: toolkit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: tommygwu/claude-review-actions/agents-toolkit@v1
+      - run: '"$AGENTS_NODE" --version'
+  ci-census:
+    name: CI census
+    needs: [toolkit, test]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: tommygwu/claude-review-actions/agents-census@v1
+        with:
+          deploy-key: ${{ secrets.AGENTS_PACKAGE_DEPLOY_KEY }}
+          needs: ${{ toJSON(needs) }}
+          job-ids: '{"Toolkit": "toolkit", "Test": "test"}'
+          report-job: Test
+```
+
+The programs use only the Python standard library and run on the runner's own `python3` (3.12 or later).
+Every input reaches a program through `env:`.
+
+### agents-toolkit-fetch
+
+Give the job `contents: read` and `pull-requests: read`.
+The step checks out a disposable `blob:none` probe of agents, resolves the revision with the agents `companion_source.py agents-revision`, and outputs it as `revision`.
+On `pull_request` events it reads the live pull request body, so a `Companion:` line added after the pull request opened takes effect on the next run, including a re-run.
+It then fetches every missing blob of that revision in one request, archives the files `toolkit-paths` lists for `profile` with `git archive`, and appends the candidate-revision stamps that `stamp` writes.
+`default` is the consumer path list; `openclaw` is the whole tree.
+The archive's embedded commit equals `revision`, and its files equal the profile's list plus the stamps; it never holds `.git` or the deploy key.
+Before any later step, and whether it passed or failed, the step deletes the probe, the key file and known-hosts file its checkout persisted, checkout's credential include file, and any other copy of the key in `$RUNNER_TEMP`.
+It uploads artifact `agents-toolkit` (file `agents-toolkit.tar`) with `overwrite: true`, so a re-run replaces it.
+
+An empty `deploy-key`, as on a fork pull request, fails with that reason.
+Git older than 2.44 fails, because the archive step relies on `GIT_NO_LAZY_FETCH` to prove it makes no per-blob fetch.
+A public repository must set `upload: false` and run `agents-toolkit` later in the same job: anyone signed in to GitHub can download a public repository's artifacts.
+With `upload: true`, the step fails in a public repository before it checks anything out.
+
+### agents-toolkit
+
+The step needs no permission beyond the run's own artifact token, and no key, so third-party install scripts in test jobs never see the key.
+It downloads artifact `agents-toolkit`, unless `$RUNNER_TEMP/agents-toolkit.tar` already exists from a fetch step earlier in the same job.
+It always unpacks at `$RUNNER_TEMP/agents-toolkit`, outside the checkout, and requires a root `.candidate-revision` that holds one commit.
+A missing artifact fails with a message that says to re-run all jobs.
+
+It installs mise at the version and checksum in the toolkit's `.github/actions/mise-python/runtime-versions.sh`, at `$RUNNER_TEMP/mise/bin/mise`; a platform that file does not list fails.
+On Linux it runs the toolkit's `ci_node_prepare`; it then runs the toolkit's `repo-runtime provision --ci` and installs the Python series in the toolkit's `.python-version`.
+It writes `AGENTS_REPO`, `AGENTS_NODE`, `AGENTS_ARCHIVE`, and `REPO_RUNTIME_MISE_BIN` to `GITHUB_ENV` and never writes `GITHUB_PATH`, so the job's own commands keep their own Node.
+Call toolkit commands through `$AGENTS_REPO`; a later `repo-runtime` call finds mise through `REPO_RUNTIME_MISE_BIN`.
+
+The step owns the toolkit runtime cache at `~/.local/share/mise`.
+The key prefix hashes the toolkit's Node, Python, pnpm, and mise pins, plus OS and architecture, so a pin change needs no action change.
+On GitHub-hosted runners it restores the newest patch in that pin family and reuses an installed Python patch offline.
+It saves only when `save` is `true` on a default-branch push or schedule and the saved key differs, the trust rule agents' `mise-python` uses.
+`cache: false` skips both restore and save.
+
+`host-link` links `$AGENTS_REPO/<subpath>` at `/Users/Shared/agents/<subpath>` for Beef and Cake tests.
+It refuses on a runner that is not GitHub-hosted when that runner can reach a host `/Users` mount, so a CI job cannot overwrite a live host checkout.
+
+### agents-census
+
+Give the job `contents: read` and `actions: read`, make it need every other job, and run it with `if: ${{ !cancelled() }}`.
+Pass `needs: ${{ toJSON(needs) }}`, because a composite action cannot read the `needs` context.
+The step checks out agents `main` with the read key and `persist-credentials: false` and installs its pinned Python with agents' `mise-python`, which adds that Python to `PATH` for the rest of the job.
+
+It reads every page of this attempt's jobs.
+A job whose run, head commit, or attempt differs from this run fails the step, and the current job (`current-job`, default `CI census`) must be listed.
+A job whose name equals a `job-ids` key, or is a matrix row named `<key> (…)`, and that has no conclusion yet takes `needs.<id>.result`.
+It then runs agents' `ci_census.py workflow` with one `--expected-unit` per `expected-units` entry and the report from `report-artifact`, and uploads `ci-census-workflow-<attempt>`.
+A healthy run records the same results as the per-repository census jobs did; a run whose job list is inconsistent fails instead of recording partial results.
+
+`tested-base` is dropped when the report job was skipped.
+With `require-selection: true`, a pull request run whose report job succeeded with no expected units fails.
+With `diagnostics-artifact`, the step also uploads the jobs file and census log under that name, even when the census fails.
