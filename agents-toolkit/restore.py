@@ -219,7 +219,8 @@ def export():
     print(f"Exported AGENTS_REPO={toolkit()} AGENTS_NODE={node} AGENTS_ARCHIVE={archive_path()}")
 
 
-def host_mount_reachable(mountinfo=MOUNTINFO, users=USERS):
+def host_mount_reachable():
+    mountinfo, users = MOUNTINFO, USERS
     if not os.access(mountinfo, os.R_OK) or users.is_symlink() or (users / "Shared").is_symlink():
         return True
     for line in mountinfo.read_text(encoding="utf-8", errors="replace").splitlines():

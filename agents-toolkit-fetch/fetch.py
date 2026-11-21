@@ -283,9 +283,9 @@ def credential_paths(checkout):
             paths.append(tokens[index + 1])
         elif token.startswith("UserKnownHostsFile="):
             paths.append(token.split("=", 1)[1])
-    includes = subprocess.run(["git", "config", "--file", str(config), "--get-regexp", r"^includeif\..*\.path$"],
-                              capture_output=True, text=True, check=False).stdout
-    paths += [line.split(" ", 1)[1] for line in includes.splitlines() if " " in line]
+    includes = subprocess.run(["git", "config", "--file", str(config), "--null", "--get-regexp",
+                               r"^includeif\..*\.path$"], capture_output=True, text=True, check=False).stdout
+    paths += [record.split("\n", 1)[1] for record in includes.split("\0") if "\n" in record]
     return paths
 
 
