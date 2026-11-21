@@ -1,0 +1,121 @@
+name: Record the CI census
+description: List every job of this run attempt with its result and write agents census records, so a skipped or failed job cannot pass silently.
+inputs:
+  deploy-key:
+    description: Read-only deploy key for tommygwu/agents, which owns the census writer.
+    required: true
+  github-token:
+    description: Token that reads this run's jobs (actions read).
+    default: ${{ github.token }}
+  needs:
+    description: The calling job's toJSON(needs); a composite action cannot read the needs context.
+    required: true
+  job-ids:
+    description: JSON map from job display name to job id; a key also matches matrix rows named "<key> (...)".
+    default: '{}'
+  report-job:
+    description: Exact display name of the job that produced the test report; a name no job of this run has fails the census.
+    required: true
+  report-artifact:
+    description: Artifact holding the test report; empty means no test report.
+    default: ''
+  expected-units:
+    description: JSON array of test units the report job must report; pass the report job's selection output as is.
+    default: ''
+  require-selection:
+    description: Fail a pull request run whose report job succeeded but passed no expected-units value; an explicit [] is a valid empty selection.
+    default: 'false'
+  tested-base:
+    description: Base commit the report job compared against; dropped when the report job was skipped.
+    default: ''
+  current-job:
+    description: Display name of the job that runs this action.
+    default: CI census
+  diagnostics-artifact:
+    description: Optional artifact name for the jobs file and census log, uploaded even when the census fails.
+    default: ''
+runs:
+  using: composite
+  steps:
+    - name: Check the census inputs
+      shell: bash
+      env:
+        CENSUS_DEPLOY_KEY: ${{ inputs.deploy-key }}
+      run: |
+        if [[ -z "${CENSUS_DEPLOY_KEY//[[:space:]]/}" ]]; then
+          echo "::error title=agents-census::deploy-key is empty: the secret is unset or not passed to this run; fork and Dependabot pull requests receive no secrets"
+          exit 1
+        fi
+
+    - name: Check out the census writer
+      uses: actions/checkout@v7
+      with:
+        repository: tommygwu/agents
+        ref: main
+        path: .agents-census
+        ssh-key: ${{ inputs.deploy-key }}
+        persist-credentials: false
+
+    - name: Install the census writer's Python
+      uses: ./.agents-census/.github/actions/mise-python
+      with:
+        version-file: .agents-census/.python-version
+        working-directory: .agents-census
+
+    - name: Prepare the census folders
+      shell: bash
+      run: mkdir -p "$RUNNER_TEMP/agents-census/reports"
+
+    - name: Download the test report
+      if: inputs.report-artifact != ''
+      continue-on-error: true
+      uses: actions/download-artifact@v8
+      with:
+        name: ${{ inputs.report-artifact }}
+        path: ${{ runner.temp }}/agents-census/reports
+
+    - name: Read this attempt's jobs
+      shell: bash
+      env:
+        CENSUS_ACTION_PATH: ${{ github.action_path }}
+        CENSUS_DIR: ${{ runner.temp }}/agents-census
+        INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
+        INPUT_NEEDS: ${{ inputs.needs }}
+        INPUT_JOB_IDS: ${{ inputs.job-ids }}
+        INPUT_CURRENT_JOB: ${{ inputs.current-job }}
+        INPUT_REPORT_JOB: ${{ inputs.report-job }}
+      run: |
+        set -o pipefail
+        python3 "$CENSUS_ACTION_PATH/census.py" jobs 2>&1 | tee -a "$CENSUS_DIR/census.log"
+
+    - name: Write each job census
+      shell: bash
+      env:
+        CENSUS_ACTION_PATH: ${{ github.action_path }}
+        CENSUS_DIR: ${{ runner.temp }}/agents-census
+        CENSUS_AGENTS: ${{ github.workspace }}/.agents-census
+        INPUT_REPORT_JOB: ${{ inputs.report-job }}
+        INPUT_CURRENT_JOB: ${{ inputs.current-job }}
+        INPUT_EXPECTED_UNITS: ${{ inputs.expected-units }}
+        INPUT_REQUIRE_SELECTION: ${{ inputs.require-selection }}
+        INPUT_TESTED_BASE: ${{ inputs.tested-base }}
+      run: |
+        set -o pipefail
+        CENSUS_PYTHON="$UV_PYTHON" python3 "$CENSUS_ACTION_PATH/census.py" workflow 2>&1 | tee -a "$CENSUS_DIR/census.log"
+
+    - name: Upload job censuses
+      uses: actions/upload-artifact@v7
+      with:
+        name: ci-census-workflow-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/agents-census/ci-census/ci-census-*.json
+        if-no-files-found: error
+
+    - name: Upload census diagnostics
+      if: always() && inputs.diagnostics-artifact != ''
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ inputs.diagnostics-artifact }}
+        path: |
+          ${{ runner.temp }}/agents-census/jobs.json
+          ${{ runner.temp }}/agents-census/census.log
+        if-no-files-found: warn

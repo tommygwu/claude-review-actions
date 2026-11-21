@@ -4,13 +4,15 @@
       "node-test",
       "ci-run-context",
       "ci-run-context-schema",
-      "post-merge-cadence"
+      "post-merge-cadence",
+      "toolkit-actions"
     ],
     "full": [
       "node-test",
       "ci-run-context",
       "ci-run-context-schema",
-      "post-merge-cadence"
+      "post-merge-cadence",
+      "toolkit-actions"
     ],
     "optional": {}
   },
@@ -121,6 +123,7 @@
       ],
       "inputs": [
         ".github/actions/post-merge-cadence",
+        "lib",
         "scripts/run-python.mjs"
       ],
       "dependencies": [],
@@ -128,6 +131,37 @@
         "class": "unit"
       },
       "timeout_seconds": 120,
+      "cache": {
+        "environment": [
+          "PATH",
+          "NODE_OPTIONS",
+          "PYTHONPATH",
+          "PYTHONHOME",
+          "UV_PYTHON"
+        ]
+      }
+    },
+    {
+      "id": "toolkit-actions",
+      "command": [
+        "node",
+        "scripts/run-python.mjs",
+        "-B",
+        "scripts/run-toolkit-tests.py"
+      ],
+      "inputs": [
+        "agents-toolkit-fetch",
+        "agents-toolkit",
+        "agents-census",
+        "lib",
+        "scripts/run-toolkit-tests.py",
+        "scripts/run-python.mjs"
+      ],
+      "dependencies": [],
+      "resource": {
+        "class": "unit"
+      },
+      "timeout_seconds": 300,
       "cache": {
         "environment": [
           "PATH",

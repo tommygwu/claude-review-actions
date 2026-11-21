@@ -1,0 +1,114 @@
+name: Restore the agents toolkit
+description: Unpack artifact agents-toolkit at $RUNNER_TEMP/agents-toolkit and provision its own Node and Python without changing PATH.
+inputs:
+  cache:
+    description: Restore and save the toolkit runtime cache; false skips both.
+    default: 'true'
+  save:
+    description: Save the runtime cache on a GitHub-hosted default-branch push or schedule when the key missed.
+    default: 'false'
+  host-link:
+    description: Optional toolkit subpath, such as packages/openclaw-shared or ., to link at /Users/Shared/agents/<subpath>.
+    default: ''
+runs:
+  using: composite
+  steps:
+    - name: Find a toolkit archive from this job
+      id: local
+      shell: bash
+      run: |
+        if [[ -f "$RUNNER_TEMP/agents-toolkit.tar" ]]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; fi
+
+    - name: Download the toolkit
+      id: download
+      if: steps.local.outputs.present != 'true'
+      continue-on-error: true
+      uses: actions/download-artifact@v8
+      with:
+        name: agents-toolkit
+        path: ${{ runner.temp }}
+
+    - name: Unpack the toolkit
+      shell: bash
+      env:
+        RESTORE_ACTION_PATH: ${{ github.action_path }}
+        DOWNLOAD_OUTCOME: ${{ steps.download.outcome }}
+      run: python3 "$RESTORE_ACTION_PATH/restore.py" unpack
+
+    - name: Plan the toolkit runtime cache
+      id: plan
+      shell: bash
+      env:
+        RESTORE_ACTION_PATH: ${{ github.action_path }}
+        INPUT_CACHE: ${{ inputs.cache }}
+        INPUT_SAVE: ${{ inputs.save }}
+        DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        RUNNER_ENVIRONMENT: ${{ runner.environment }}
+      run: python3 "$RESTORE_ACTION_PATH/restore.py" plan
+
+    - name: Restore toolkit runtimes
+      id: cache
+      if: steps.plan.outputs.restore == 'true'
+      uses: actions/cache/restore@v6
+      with:
+        path: ~/.local/share/mise
+        key: ${{ steps.plan.outputs.prefix }}
+        restore-keys: ${{ steps.plan.outputs.prefix }}
+
+    - name: Install the pinned mise
+      shell: bash
+      env:
+        RESTORE_ACTION_PATH: ${{ github.action_path }}
+      run: python3 "$RESTORE_ACTION_PATH/restore.py" mise
+
+    - name: Prepare Linux for toolkit Node
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        set -euo pipefail
+        pin="$(tr -d '[:space:]' < "$RUNNER_TEMP/agents-toolkit/.node-version")"
+        source "$RUNNER_TEMP/agents-toolkit/.github/scripts/ci_node_support.sh"
+        ci_node_prepare "${pin#v}"
+
+    - name: Provision toolkit Node
+      shell: bash
+      working-directory: ${{ runner.temp }}
+      env:
+        MISE_GITHUB_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        MISE_CEILING_PATHS="$(dirname "$RUNNER_TEMP")" REPO_RUNTIME_MISE_BIN="$RUNNER_TEMP/mise/bin/mise" \
+          "$RUNNER_TEMP/agents-toolkit/skills/repo-runtime/scripts/repo-runtime" provision --ci --repo "$RUNNER_TEMP/agents-toolkit"
+
+    - name: Install toolkit Python
+      id: python
+      shell: bash
+      env:
+        RESTORE_ACTION_PATH: ${{ github.action_path }}
+        CACHE_SAVE: ${{ steps.plan.outputs.save }}
+        RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        MISE_GITHUB_TOKEN: ${{ github.token }}
+      run: python3 "$RESTORE_ACTION_PATH/restore.py" python
+
+    - name: Export toolkit paths
+      shell: bash
+      env:
+        RESTORE_ACTION_PATH: ${{ github.action_path }}
+        MISE_GITHUB_TOKEN: ${{ github.token }}
+      run: python3 "$RESTORE_ACTION_PATH/restore.py" export
+
+    - name: Save toolkit runtimes
+      if: steps.plan.outputs.save == 'true' && steps.cache.outputs.cache-matched-key != format('{0}{1}', steps.plan.outputs.prefix, steps.python.outputs.patch)
+      uses: actions/cache/save@v6
+      with:
+        path: ~/.local/share/mise
+        key: ${{ steps.plan.outputs.prefix }}${{ steps.python.outputs.patch }}
+
+    - name: Link the toolkit for host tests
+      if: inputs.host-link != ''
+      shell: bash
+      env:
+        RESTORE_ACTION_PATH: ${{ github.action_path }}
+        HOST_LINK: ${{ inputs.host-link }}
+        RUNNER_ENVIRONMENT: ${{ runner.environment }}
+      run: python3 "$RESTORE_ACTION_PATH/restore.py" host-link

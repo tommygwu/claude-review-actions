@@ -1,0 +1,96 @@
+name: Fetch the agents toolkit
+description: Resolve this run's agents revision, archive the toolkit files a profile lists, and upload them as artifact agents-toolkit.
+inputs:
+  deploy-key:
+    description: Read-only deploy key for tommygwu/agents; empty on fork pull requests, which fail with that reason.
+    required: true
+  github-token:
+    description: Token that reads this repository's pull request body (pull-requests read) and visibility.
+    default: ${{ github.token }}
+  profile:
+    description: Toolkit path-list profile, default or openclaw (the whole tree).
+    default: default
+  upload:
+    description: Upload artifact agents-toolkit; set false in a public repository and restore in the same job.
+    default: 'true'
+outputs:
+  revision:
+    description: The resolved agents commit.
+    value: ${{ steps.resolve.outputs.revision }}
+runs:
+  using: composite
+  steps:
+    - name: Check toolkit fetch inputs
+      shell: bash
+      env:
+        FETCH_ACTION_PATH: ${{ github.action_path }}
+        FETCH_DEPLOY_KEY: ${{ inputs.deploy-key }}
+        FETCH_GITHUB_TOKEN: ${{ inputs.github-token }}
+        FETCH_UPLOAD: ${{ inputs.upload }}
+        FETCH_REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
+      run: python3 "$FETCH_ACTION_PATH/fetch.py" check
+
+    - name: Check out the agents probe
+      uses: actions/checkout@v7
+      with:
+        repository: tommygwu/agents
+        path: .agents-toolkit-probe
+        ssh-key: ${{ inputs.deploy-key }}
+        persist-credentials: true
+        fetch-depth: 1
+        filter: blob:none
+        sparse-checkout: |
+          .python-version
+          scripts/companion_source.py
+          skills/repository/registry.json
+        sparse-checkout-cone-mode: false
+
+    # The resolver is agents code, so it runs on the Python agents pins; PATH stays the job's own.
+    - name: Install the resolver's pinned Python
+      id: resolver-python
+      uses: actions/setup-python@v6
+      with:
+        python-version-file: .agents-toolkit-probe/.python-version
+        update-environment: false
+
+    - name: Move the probe out of the workspace
+      shell: bash
+      env:
+        FETCH_ACTION_PATH: ${{ github.action_path }}
+      run: python3 "$FETCH_ACTION_PATH/fetch.py" move
+
+    - name: Resolve the agents revision
+      id: resolve
+      shell: bash
+      env:
+        FETCH_ACTION_PATH: ${{ github.action_path }}
+        FETCH_GITHUB_TOKEN: ${{ inputs.github-token }}
+        FETCH_RESOLVER_PYTHON: ${{ steps.resolver-python.outputs.python-path }}
+      run: python3 "$FETCH_ACTION_PATH/fetch.py" resolve
+
+    - name: Archive the toolkit
+      shell: bash
+      env:
+        FETCH_ACTION_PATH: ${{ github.action_path }}
+        FETCH_REVISION: ${{ steps.resolve.outputs.revision }}
+        FETCH_PROFILE: ${{ inputs.profile }}
+        FETCH_DEPLOY_KEY: ${{ inputs.deploy-key }}
+        FETCH_RESOLVER_PYTHON: ${{ steps.resolver-python.outputs.python-path }}
+      run: python3 "$FETCH_ACTION_PATH/fetch.py" archive
+
+    - name: Remove the probe and every deploy-key copy
+      if: always()
+      shell: bash
+      env:
+        FETCH_ACTION_PATH: ${{ github.action_path }}
+        FETCH_DEPLOY_KEY: ${{ inputs.deploy-key }}
+      run: python3 "$FETCH_ACTION_PATH/fetch.py" cleanup
+
+    - name: Upload the toolkit
+      if: inputs.upload == 'true'
+      uses: actions/upload-artifact@v7
+      with:
+        name: agents-toolkit
+        path: ${{ runner.temp }}/agents-toolkit.tar
+        if-no-files-found: error
+        overwrite: true

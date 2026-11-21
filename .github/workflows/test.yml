@@ -4,6 +4,9 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review, closed]
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}${{ github.event.pull_request.draft && format('-draft-{0}', github.run_id) || '' }}
   cancel-in-progress: true
@@ -38,3 +41,109 @@ jobs:
       - name: Run post-merge cadence tests
         if: always()
         run: node scripts/run-python.mjs -B -m unittest discover -s .github/actions/post-merge-cadence -p 'test_*.py'
+      - name: Run toolkit action tests
+        if: always()
+        run: node scripts/run-python.mjs -B scripts/run-toolkit-tests.py
+      - name: Run toolkit action tests on the runner's Python
+        if: always()
+        # Fetch runs on the runner's own python3, so the programs must stay compatible with it.
+        run: /usr/bin/python3 -B scripts/run-toolkit-tests.py
+
+  # The read key is used only on same-repository pull requests, and no job here uploads agents content:
+  # anyone signed in to GitHub can download a public repository's artifacts.
+  toolkit-e2e:
+    name: Toolkit end to end
+    if: ${{ !github.event.pull_request.draft && github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]' }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            profile: default
+            cache: 'true'
+            host-link: ''
+          - os: macos-latest
+            profile: default
+            cache: 'false'
+            host-link: ''
+          - os: ubuntu-latest
+            profile: openclaw
+            cache: 'true'
+            host-link: packages/openclaw-shared
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Record the job PATH
+        run: printf '%s' "$PATH" > "$RUNNER_TEMP/path-before"
+      - name: Fetch the toolkit
+        id: fetch
+        uses: ./agents-toolkit-fetch
+        with:
+          deploy-key: ${{ secrets.AGENTS_PACKAGE_DEPLOY_KEY }}
+          profile: ${{ matrix.profile }}
+          upload: 'false'
+      - name: Restore the toolkit
+        uses: ./agents-toolkit
+        with:
+          cache: ${{ matrix.cache }}
+          host-link: ${{ matrix.host-link }}
+      - name: Check the restored toolkit
+        env:
+          REVISION: ${{ steps.fetch.outputs.revision }}
+          DEPLOY_KEY: ${{ secrets.AGENTS_PACKAGE_DEPLOY_KEY }}
+          PROFILE: ${{ matrix.profile }}
+          HOST_LINK: ${{ matrix.host-link }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+          [[ "$PATH" == "$(cat "$RUNNER_TEMP/path-before")" ]] || fail "restore changed PATH"
+          [[ "$AGENTS_REPO" == "$RUNNER_TEMP/agents-toolkit" && -d "$AGENTS_REPO" ]] || fail "AGENTS_REPO is wrong"
+          [[ -x "$AGENTS_NODE" && -x "$REPO_RUNTIME_MISE_BIN" && -f "$AGENTS_ARCHIVE" ]] || fail "an exported path is missing"
+          [[ "$("$AGENTS_NODE" --version)" == "v$(tr -d '[:space:]' < "$AGENTS_REPO/.node-version")" ]] || fail "AGENTS_NODE is not the toolkit Node"
+          [[ "$(git get-tar-commit-id < "$AGENTS_ARCHIVE")" == "$REVISION" ]] || fail "archive commit differs from the resolved revision"
+          [[ "$(cat "$AGENTS_REPO/.candidate-revision")" == "$REVISION" ]] || fail "root stamp differs from the resolved revision"
+          [[ ! -e .agents-toolkit-probe && ! -e "$RUNNER_TEMP/agents-probe" ]] || fail "the agents probe remains"
+          key="$(printf '%s' "$DEPLOY_KEY" | tr -d '[:space:]')"
+          for file in "$RUNNER_TEMP"/*; do
+            [[ -f "$file" && ! -L "$file" ]] || continue
+            [[ "$(tr -d '[:space:]' < "$file")" != "$key" ]] || fail "a deploy-key copy remains in RUNNER_TEMP"
+          done
+          if [[ "$PROFILE" == openclaw ]]; then
+            [[ "$(cat "$AGENTS_REPO/packages/openclaw-shared/.candidate-revision")" == "$REVISION" ]] || fail "package stamp differs"
+          else
+            [[ ! -e "$AGENTS_REPO/packages/openclaw-shared/.candidate-revision" ]] || fail "default profile holds the package stamp"
+          fi
+          if [[ -n "$HOST_LINK" ]]; then
+            [[ "$(cd "/Users/Shared/agents/$HOST_LINK" && pwd -P)" == "$(cd "$AGENTS_REPO/$HOST_LINK" && pwd -P)" ]] || fail "host link does not resolve into the toolkit"
+          fi
+          echo "Restored toolkit checks passed for $PROFILE at $REVISION"
+      - name: Call the toolkit runtime from a later step
+        run: '"$AGENTS_REPO/skills/repo-runtime/scripts/repo-runtime" check --repo "$AGENTS_REPO"'
+
+  toolkit-census:
+    name: Toolkit census
+    needs: [test, toolkit-e2e]
+    if: ${{ !cancelled() && !github.event.pull_request.draft && github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Record this run's jobs
+        uses: ./agents-census
+        with:
+          deploy-key: ${{ secrets.AGENTS_PACKAGE_DEPLOY_KEY }}
+          needs: ${{ toJSON(needs) }}
+          job-ids: '{"test": "test", "Toolkit end to end": "toolkit-e2e"}'
+          report-job: test
+          current-job: Toolkit census
