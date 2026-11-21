@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
 import unittest
@@ -103,7 +104,7 @@ class FetchFixture(unittest.TestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.root = Path(directory.name).resolve()
-        self.temp, self.workspace = self.root / "runner-temp", self.root / "workspace"
+        self.temp, self.workspace = self.root / "runner-temp", self.root / "work space"
         self.temp.mkdir()
         self.workspace.mkdir()
         self.origin = self.root / "agents.git"
@@ -115,7 +116,8 @@ class FetchFixture(unittest.TestCase):
             **GIT_ENV, "RUNNER_TEMP": str(self.temp), "GITHUB_WORKSPACE": str(self.workspace),
             "GITHUB_OUTPUT": str(self.output), "GITHUB_EVENT_NAME": "push", "GITHUB_EVENT_PATH": str(self.event),
             "GITHUB_REPOSITORY": REPOSITORY, "GITHUB_API_URL": API, "FETCH_GITHUB_TOKEN": "job-token",
-            "FETCH_DEPLOY_KEY": KEY, "FETCH_UPLOAD": "false", "FETCH_REPOSITORY_PRIVATE": "", "FETCH_PROFILE": ""})
+            "FETCH_DEPLOY_KEY": KEY, "FETCH_UPLOAD": "false", "FETCH_REPOSITORY_PRIVATE": "", "FETCH_PROFILE": "",
+            "FETCH_RESOLVER_PYTHON": ""})
         environment.start()
         self.addCleanup(environment.stop)
         self.requests = []
@@ -179,10 +181,10 @@ class FetchFixture(unittest.TestCase):
 
 
 class CheckTest(FetchFixture):
-    def test_empty_deploy_key_fails_and_names_fork_pull_requests(self):
+    def test_empty_deploy_key_fails_naming_the_unset_secret_cause(self):
         code, _, err = self.command("check", FETCH_DEPLOY_KEY="")
         self.assertEqual(1, code)
-        self.assertIn("fork pull requests", err)
+        self.assertIn("the secret is unset or not passed to this run", err)
 
     def test_git_older_than_2_44_fails_and_2_44_passes(self):
         bin_dir = self.root / "fake-bin"
@@ -241,6 +243,14 @@ class ResolveTest(FetchFixture):
         self.assertEqual([f"{API}/repos/{REPOSITORY}/pulls/7"], self.requests)
         self.assertEqual(self.companion, revision)
 
+    def test_resolver_runs_on_the_resolver_python_when_one_is_given(self):
+        log, wrapper = self.root / "resolver-python.log", self.root / "resolver-python"
+        wrapper.write_text(f'#!/bin/sh\necho "$2" >> "{log}"\nexec "{sys.executable}" "$@"\n', encoding="utf-8")
+        wrapper.chmod(0o755)
+        with patch.dict(os.environ, {"FETCH_RESOLVER_PYTHON": str(wrapper)}):
+            self.assertEqual(self.main, self.resolved())
+        self.assertEqual(["agents-revision"], log.read_text().splitlines())
+
     def test_resolver_output_without_exactly_one_full_revision_line_fails(self):
         self.checkout_probe()
         self.assertEqual(0, self.command("move")[0])
@@ -298,14 +308,18 @@ class ArchiveTest(FetchFixture):
         self.assertEqual([1], fetches)
         self.assertEqual(DEFAULT_MEMBERS, set(self.members()))
 
-    def test_tracked_deploy_key_fails_the_archive_and_cleanup_still_removes_the_probe(self):
+    def test_tracked_deploy_key_fails_the_archive_leaving_no_tar_and_cleanup_removes_the_rest(self):
         revision = self.resolved()
         notes_key = MAIN_FILES["skills/repo-runtime/notes.txt"].strip()
+        partial = self.temp / "agents-toolkit.tar.partial"
         code, _, _ = self.command("archive", FETCH_REVISION=revision, FETCH_DEPLOY_KEY=notes_key)
         self.assertEqual(1, code)
+        self.assertFalse((self.temp / "agents-toolkit.tar").exists())
+        self.assertTrue(partial.exists())
         code, _, err = self.command("cleanup", FETCH_DEPLOY_KEY=notes_key)
         self.assertEqual(0, code, err)
         self.assert_no_probe_or_key()
+        self.assertFalse(partial.exists())
 
 
 class CleanupTest(FetchFixture):
@@ -339,6 +353,35 @@ class CleanupTest(FetchFixture):
         code, _, err = self.command("cleanup", FETCH_DEPLOY_KEY="")
         self.assertEqual(0, code, err)
         self.assertTrue(empty.exists())
+
+    def test_cleanup_finishes_every_removal_when_a_probe_config_is_unreadable(self):
+        probe = self.checkout_probe()
+        shutil.copytree(probe, self.temp / "agents-probe", symlinks=True)
+        (probe / ".git" / "config").write_text("[core\n\tbroken =\n", encoding="utf-8")
+        copy = self.temp / "copied-key"
+        copy.write_text(KEY, encoding="utf-8")
+        self.assertEqual(1, self.command("cleanup")[0])
+        self.assert_no_probe_or_key()
+        self.assertFalse(copy.exists())
+
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root ignores directory permissions")
+    def test_cleanup_reports_a_credentials_file_it_cannot_remove_and_removes_the_rest(self):
+        probe = self.checkout_probe()
+        locked = self.temp / "locked"
+        locked.mkdir()
+        stuck = locked / "git-credentials-stuck.config"
+        stuck.write_text("[http]\n", encoding="utf-8")
+        git("config", f"includeIf.gitdir:{self.root}/other/.git.path", str(stuck), cwd=probe)
+        copy = self.temp / "copied-key"
+        copy.write_text(KEY, encoding="utf-8")
+        locked.chmod(0o500)
+        self.addCleanup(locked.chmod, 0o700)
+        code, _, err = self.command("cleanup")
+        self.assertEqual(1, code)
+        self.assertIn(str(stuck), err)
+        self.assertTrue(stuck.exists())
+        self.assert_no_probe_or_key()
+        self.assertFalse(copy.exists())
 
     @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root ignores directory permissions")
     def test_cleanup_fails_while_a_key_copy_survives(self):
