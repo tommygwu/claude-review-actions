@@ -53,7 +53,7 @@ jobs:
   # anyone signed in to GitHub can download a public repository's artifacts.
   toolkit-e2e:
     name: Toolkit end to end
-    if: ${{ !github.event.pull_request.draft && github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' }}
+    if: ${{ !github.event.pull_request.draft && github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     permissions:
@@ -96,6 +96,7 @@ jobs:
       - name: Check the restored toolkit
         env:
           REVISION: ${{ steps.fetch.outputs.revision }}
+          DEPLOY_KEY: ${{ secrets.AGENTS_PACKAGE_DEPLOY_KEY }}
           PROFILE: ${{ matrix.profile }}
           HOST_LINK: ${{ matrix.host-link }}
         run: |
@@ -108,6 +109,11 @@ jobs:
           [[ "$(git get-tar-commit-id < "$AGENTS_ARCHIVE")" == "$REVISION" ]] || fail "archive commit differs from the resolved revision"
           [[ "$(cat "$AGENTS_REPO/.candidate-revision")" == "$REVISION" ]] || fail "root stamp differs from the resolved revision"
           [[ ! -e .agents-toolkit-probe && ! -e "$RUNNER_TEMP/agents-probe" ]] || fail "the agents probe remains"
+          key="$(printf '%s' "$DEPLOY_KEY" | tr -d '[:space:]')"
+          for file in "$RUNNER_TEMP"/*; do
+            [[ -f "$file" && ! -L "$file" ]] || continue
+            [[ "$(tr -d '[:space:]' < "$file")" != "$key" ]] || fail "a deploy-key copy remains in RUNNER_TEMP"
+          done
           if [[ "$PROFILE" == openclaw ]]; then
             [[ "$(cat "$AGENTS_REPO/packages/openclaw-shared/.candidate-revision")" == "$REVISION" ]] || fail "package stamp differs"
           else
@@ -123,7 +129,7 @@ jobs:
   toolkit-census:
     name: Toolkit census
     needs: [test, toolkit-e2e]
-    if: ${{ !cancelled() && !github.event.pull_request.draft && github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' }}
+    if: ${{ !cancelled() && !github.event.pull_request.draft && github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

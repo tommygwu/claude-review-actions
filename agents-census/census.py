@@ -65,7 +65,9 @@ def matched_id(name, job_ids):
     return None
 
 
-def attempt_jobs(rows, *, run_id, attempt, head, needs, job_ids, current_job):
+def attempt_jobs(rows, *, run_id, attempt, head, needs, job_ids, current_job, report_job):
+    if not any(job.get("name") == report_job for job in rows):
+        raise CensusError(f"report-job {report_job!r} matches no job of this run; name the job's display name exactly")
     jobs = []
     for job in rows:
         job_attempt = job.get("run_attempt")
@@ -96,7 +98,8 @@ def jobs():
                  os.environ.get("INPUT_GITHUB_TOKEN", ""))
     rows = api.pages(f"/actions/runs/{run_id}/attempts/{attempt}/jobs", "jobs")[0]
     result = attempt_jobs(rows, run_id=run_id, attempt=attempt, head=head_sha(), needs=needs, job_ids=job_ids,
-                          current_job=os.environ.get("INPUT_CURRENT_JOB", "") or "CI census")
+                          current_job=os.environ.get("INPUT_CURRENT_JOB", "") or "CI census",
+                          report_job=environment("INPUT_REPORT_JOB"))
     census_dir().mkdir(parents=True, exist_ok=True)
     jobs_file().write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print(f"Recorded {len(result)} jobs of attempt {attempt}")
@@ -106,6 +109,7 @@ def workflow():
     recorded = json.loads(jobs_file().read_text(encoding="utf-8"))
     report_job = environment("INPUT_REPORT_JOB")
     current_job = os.environ.get("INPUT_CURRENT_JOB", "") or "CI census"
+    selected = bool(os.environ.get("INPUT_EXPECTED_UNITS", "").strip())
     units = json_input("INPUT_EXPECTED_UNITS", list, "[]")
     if not all(isinstance(unit, str) and unit for unit in units):
         raise CensusError("expected-units must be a JSON array of unit names")
@@ -113,7 +117,7 @@ def workflow():
     if require not in ("true", "false"):
         raise CensusError(f"require-selection must be true or false, not {require!r}")
     report = next((job for job in recorded if job.get("name") == report_job), None)
-    if (require == "true" and os.environ.get("GITHUB_EVENT_NAME") == "pull_request" and not units
+    if (require == "true" and os.environ.get("GITHUB_EVENT_NAME") == "pull_request" and not selected
             and report and report.get("conclusion") == "success"):
         raise CensusError(f"successful {report_job} has no census selection")
     env = os.environ.copy()

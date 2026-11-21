@@ -56,6 +56,10 @@ def archive_path():
     return runner_temp() / "agents-toolkit.tar"
 
 
+def partial_archive_path():
+    return runner_temp() / "agents-toolkit.tar.partial"
+
+
 def client():
     return Client(os.environ.get("GITHUB_API_URL", "https://api.github.com"), environment("GITHUB_REPOSITORY"),
                   os.environ.get("FETCH_GITHUB_TOKEN", ""))
@@ -106,8 +110,9 @@ def repository_private():
 
 def check():
     if not os.environ.get("FETCH_DEPLOY_KEY", "").strip():
-        raise FetchError("deploy-key is empty; fork pull requests receive no secrets, "
-                         "so run the toolkit fetch only for same-repository pull requests")
+        raise FetchError("deploy-key is empty: the secret is unset or not passed to this run; fork and Dependabot "
+                         "pull requests receive no secrets, so run the toolkit fetch only for same-repository pull "
+                         "requests")
     version = git_version()
     if version < MINIMUM_GIT:
         raise FetchError(f"fetch needs git >= {MINIMUM_GIT[0]}.{MINIMUM_GIT[1]} (GIT_NO_LAZY_FETCH), "
@@ -130,7 +135,7 @@ def move():
 
 
 def resolver(arguments, *, timeout):
-    command = [sys.executable, str(probe() / RESOLVER), *arguments]
+    command = [os.environ.get("FETCH_RESOLVER_PYTHON") or sys.executable, str(probe() / RESOLVER), *arguments]
     try:
         result = subprocess.run(command, capture_output=True, text=True, timeout=timeout, check=False,
                                 env=git_environment())
@@ -246,7 +251,8 @@ def archive():
     if not paths:
         raise FetchError(f"toolkit-paths listed no paths for profile {profile}")
     hydrate(revision)
-    tar_path = archive_path()
+    tar_path = partial_archive_path()
+    tar_path.unlink(missing_ok=True)
     git(["archive", "--format=tar", "-o", str(tar_path), revision, "--", *paths], cwd=probe(), lazy=False)
     staging = Path(tempfile.mkdtemp(prefix="agents-toolkit-stamps-", dir=runner_temp()))
     try:
@@ -267,7 +273,16 @@ def archive():
         shutil.rmtree(staging, ignore_errors=True)
     expected = {path for mode, kind, _, path in tree_entries(revision, paths) if mode != GITLINK_MODE and kind == "blob"}
     count = verify_archive(tar_path, revision, expected | set(names), os.environ.get("FETCH_DEPLOY_KEY", ""))
+    os.replace(tar_path, archive_path())
     print(f"Archived {count} toolkit files for profile {profile} at {revision}")
+
+
+def git_config(config, arguments):
+    result = subprocess.run(["git", "config", "--file", str(config), *arguments], capture_output=True, text=True,
+                            check=False)
+    if result.returncode not in (0, 1):
+        raise FetchError(f"git config could not read {config}: {' '.join(result.stderr.split()) or '<no stderr>'}")
+    return result.stdout
 
 
 def credential_paths(checkout):
@@ -275,16 +290,14 @@ def credential_paths(checkout):
     if not config.is_file():
         return []
     paths = []
-    command = subprocess.run(["git", "config", "--file", str(config), "--get", "core.sshCommand"],
-                             capture_output=True, text=True, check=False).stdout.strip()
+    command = git_config(config, ["--get", "core.sshCommand"]).strip()
     tokens = shlex.split(command) if command else []
     for index, token in enumerate(tokens):
         if token == "-i" and index + 1 < len(tokens):
             paths.append(tokens[index + 1])
         elif token.startswith("UserKnownHostsFile="):
             paths.append(token.split("=", 1)[1])
-    includes = subprocess.run(["git", "config", "--file", str(config), "--null", "--get-regexp",
-                               r"^includeif\..*\.path$"], capture_output=True, text=True, check=False).stdout
+    includes = git_config(config, ["--null", "--get-regexp", r"^includeif\..*\.path$"])
     paths += [record.split("\n", 1)[1] for record in includes.split("\0") if "\n" in record]
     return paths
 
@@ -301,21 +314,43 @@ def key_copies(temp, key):
 
 
 def cleanup():
+    """Remove every probe and credential copy, attempting each removal even after an earlier one fails."""
     temp = runner_temp()
-    for checkout in (workspace_probe(), probe()):
-        for raw in credential_paths(checkout):
-            path = Path(os.path.expandvars(raw)).resolve()
-            if path.is_relative_to(temp) and path != temp and path.is_file():
-                path.unlink()
-        if checkout.exists():
-            shutil.rmtree(checkout)
+    checkouts = (workspace_probe(), probe())
+    failures = []
+    credentials = set()
+    for checkout in checkouts:
+        try:
+            for raw in credential_paths(checkout):
+                path = Path(os.path.expandvars(raw)).resolve()
+                if path.is_relative_to(temp) and path != temp:
+                    credentials.add(path)
+        except (FetchError, ValueError) as error:
+            failures.append(f"cannot read the credentials of {checkout}: {error}")
+    for path in sorted(credentials) + [partial_archive_path()]:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError as error:
+            failures.append(f"cannot remove {path}: {error}")
+    for checkout in checkouts:
+        try:
+            if checkout.exists():
+                shutil.rmtree(checkout)
+        except OSError as error:
+            failures.append(f"cannot remove {checkout}: {error}")
     key = os.environ.get("FETCH_DEPLOY_KEY", "").strip().encode()
-    for path in key_copies(temp, key):
-        path.unlink()
-    left = [str(checkout) for checkout in (workspace_probe(), probe()) if checkout.exists()]
-    left += [str(path) for path in key_copies(temp, key)]
+    try:
+        for path in key_copies(temp, key):
+            path.unlink()
+        left = [checkout for checkout in checkouts if checkout.exists()]
+        left += [path for path in credentials if path.exists()] + key_copies(temp, key)
+    except OSError as error:
+        failures.append(f"cannot sweep {temp} for deploy-key copies: {error}")
+        left = []
     if left:
-        raise FetchError(f"cleanup left {len(left)} probe or deploy-key copies")
+        failures.append(f"cleanup left {len(left)} probe, credential, or deploy-key copies")
+    if failures:
+        raise FetchError(f"{len(failures)} cleanup failures, first: {failures[0]}")
     print("Removed the agents probe and every deploy-key copy")
 
 

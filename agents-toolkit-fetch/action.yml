@@ -40,9 +40,18 @@ runs:
         fetch-depth: 1
         filter: blob:none
         sparse-checkout: |
+          .python-version
           scripts/companion_source.py
           skills/repository/registry.json
         sparse-checkout-cone-mode: false
+
+    # The resolver is agents code, so it runs on the Python agents pins; PATH stays the job's own.
+    - name: Install the resolver's pinned Python
+      id: resolver-python
+      uses: actions/setup-python@v6
+      with:
+        python-version-file: .agents-toolkit-probe/.python-version
+        update-environment: false
 
     - name: Move the probe out of the workspace
       shell: bash
@@ -56,6 +65,7 @@ runs:
       env:
         FETCH_ACTION_PATH: ${{ github.action_path }}
         FETCH_GITHUB_TOKEN: ${{ inputs.github-token }}
+        FETCH_RESOLVER_PYTHON: ${{ steps.resolver-python.outputs.python-path }}
       run: python3 "$FETCH_ACTION_PATH/fetch.py" resolve
 
     - name: Archive the toolkit
@@ -65,6 +75,7 @@ runs:
         FETCH_REVISION: ${{ steps.resolve.outputs.revision }}
         FETCH_PROFILE: ${{ inputs.profile }}
         FETCH_DEPLOY_KEY: ${{ inputs.deploy-key }}
+        FETCH_RESOLVER_PYTHON: ${{ steps.resolver-python.outputs.python-path }}
       run: python3 "$FETCH_ACTION_PATH/fetch.py" archive
 
     - name: Remove the probe and every deploy-key copy

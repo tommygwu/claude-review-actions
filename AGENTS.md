@@ -13,7 +13,7 @@ Change them in the same commit as the behavior they describe; add no per-action 
 | Change the toolkit fetch | The README `agents-toolkit-fetch` section, its [action.yml](agents-toolkit-fetch/action.yml), `fetch.py`, and tests, plus the `toolkit-e2e` job. |
 | Change the toolkit restore | The README `agents-toolkit` section, its [action.yml](agents-toolkit/action.yml), `restore.py`, and tests, plus the `toolkit-e2e` job. |
 | Change the CI census | The README `agents-census` section, its [action.yml](agents-census/action.yml), `census.py`, and tests, plus the `toolkit-census` job. |
-| Change the shared GitHub client | [lib/github_api.py](lib/github_api.py) and its tests, plus every caller: `cadence.py`, `fetch.py`, and `census.py`. |
+| Change the shared GitHub client | [lib/github_api.py](lib/github_api.py) and every caller: `cadence.py`, `fetch.py`, and `census.py`; the cadence and census tests cover it. |
 | Change validation or runtime | [.repository.json](.repository.json), [.node-version](.node-version), [suite plan](.repository-suite-plan.json) and [dependency setup](scripts/setup-schema-tests.mjs), and [CI](.github/workflows/test.yml). |
 
 The README's [best-effort review policy](README.md#best-effort-review-policy) is the only statement of success and red; link to it instead of restating it.

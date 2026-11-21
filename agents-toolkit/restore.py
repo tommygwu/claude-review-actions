@@ -74,6 +74,9 @@ def github_hosted():
 def unpack():
     tar_path, target = archive_path(), toolkit()
     if not tar_path.is_file():
+        if os.environ.get("DOWNLOAD_OUTCOME") == "failure":
+            raise RestoreError("the agents-toolkit download step failed; see its log, then re-run all jobs if the "
+                               "artifact is missing")
         raise RestoreError("artifact agents-toolkit is missing; re-run all jobs so the fetch job uploads it")
     if target.exists():
         shutil.rmtree(target)
@@ -97,7 +100,10 @@ def pin_digest(root):
             raise RestoreError(f"the toolkit has no {name}")
         content = path.read_bytes()
         if name == "package.json":
-            document = json.loads(content)
+            try:
+                document = json.loads(content)
+            except ValueError:
+                raise RestoreError("the toolkit package.json is not valid JSON") from None
             manager = document.get("packageManager") if isinstance(document, dict) else None
             if not isinstance(manager, str) or not manager:
                 raise RestoreError("the toolkit package.json has no packageManager")
@@ -140,8 +146,11 @@ def mise_release():
 
 
 def download(url):
-    with urlopen(url, timeout=DOWNLOAD_TIMEOUT_SECONDS) as response:
-        return response.read()
+    try:
+        with urlopen(url, timeout=DOWNLOAD_TIMEOUT_SECONDS) as response:
+            return response.read()
+    except OSError as error:
+        raise RestoreError(f"cannot download {url}: {error}") from None
 
 
 def mise():
@@ -180,8 +189,14 @@ def series():
 
 
 def installed_patches(pin):
-    records = json.loads(run_mise(["ls", "--installed", "python", "--json"], offline=True) or "[]")
-    versions = [record.get("version") for record in records if isinstance(record, dict)]
+    output = run_mise(["ls", "--installed", "python", "--json"], offline=True).strip() or "[]"
+    try:
+        records = json.loads(output)
+    except ValueError:
+        raise RestoreError("mise ls --installed python --json did not print JSON") from None
+    if not isinstance(records, list) or not all(isinstance(record, dict) for record in records):
+        raise RestoreError("mise ls --installed python --json did not print a list of installs")
+    versions = [record.get("version") for record in records]
     return sorted((version for version in versions
                    if isinstance(version, str) and PATCH.fullmatch(version) and version.startswith(f"{pin}.")),
                   key=lambda version: tuple(int(part) for part in version.split(".")))
@@ -263,7 +278,7 @@ def main(arguments=None):
         return 2
     try:
         COMMANDS[arguments[0]]()
-    except (RestoreError, ValueError, OSError) as error:
+    except (RestoreError, OSError) as error:
         print(f"::error title=agents-toolkit::{' '.join(str(error).split())}", file=sys.stderr)
         return 1
     return 0

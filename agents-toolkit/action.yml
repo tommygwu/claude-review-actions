@@ -20,6 +20,7 @@ runs:
         if [[ -f "$RUNNER_TEMP/agents-toolkit.tar" ]]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; fi
 
     - name: Download the toolkit
+      id: download
       if: steps.local.outputs.present != 'true'
       continue-on-error: true
       uses: actions/download-artifact@v8
@@ -31,6 +32,7 @@ runs:
       shell: bash
       env:
         RESTORE_ACTION_PATH: ${{ github.action_path }}
+        DOWNLOAD_OUTCOME: ${{ steps.download.outcome }}
       run: python3 "$RESTORE_ACTION_PATH/restore.py" unpack
 
     - name: Plan the toolkit runtime cache
@@ -71,6 +73,8 @@ runs:
     - name: Provision toolkit Node
       shell: bash
       working-directory: ${{ runner.temp }}
+      env:
+        MISE_GITHUB_TOKEN: ${{ github.token }}
       run: |
         set -euo pipefail
         MISE_CEILING_PATHS="$(dirname "$RUNNER_TEMP")" REPO_RUNTIME_MISE_BIN="$RUNNER_TEMP/mise/bin/mise" \
@@ -90,6 +94,7 @@ runs:
       shell: bash
       env:
         RESTORE_ACTION_PATH: ${{ github.action_path }}
+        MISE_GITHUB_TOKEN: ${{ github.token }}
       run: python3 "$RESTORE_ACTION_PATH/restore.py" export
 
     - name: Save toolkit runtimes

@@ -300,6 +300,7 @@ A toolkit change then ships with one `v1` move instead of one pull request per r
 ```yaml
 jobs:
   toolkit:
+    name: Toolkit
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -312,6 +313,7 @@ jobs:
         with:
           deploy-key: ${{ secrets.AGENTS_PACKAGE_DEPLOY_KEY }}
   test:
+    name: Test
     needs: toolkit
     runs-on: ubuntu-latest
     steps:
@@ -335,7 +337,7 @@ jobs:
           report-job: Test
 ```
 
-The programs use only the Python standard library and run on the runner's own `python3` (3.12 or later).
+The programs use only the Python standard library and run on the runner's own `python3` (3.12 or later); fetch runs the agents resolver on the Python agents pins, through `actions/setup-python` without changing `PATH`.
 Every input reaches a program through `env:`.
 
 ### agents-toolkit-fetch
@@ -349,7 +351,7 @@ The archive's embedded commit equals `revision`, and its files equal the profile
 Before any later step, and whether it passed or failed, the step deletes the probe, the key file and known-hosts file its checkout persisted, checkout's credential include file, and any other copy of the key in `$RUNNER_TEMP`.
 It uploads artifact `agents-toolkit` (file `agents-toolkit.tar`) with `overwrite: true`, so a re-run replaces it.
 
-An empty `deploy-key`, as on a fork pull request, fails with that reason.
+An empty `deploy-key`, as on a fork or Dependabot pull request, fails with that reason.
 Git older than 2.44 fails, because the archive step relies on `GIT_NO_LAZY_FETCH` to prove it makes no per-blob fetch.
 A public repository must set `upload: false` and run `agents-toolkit` later in the same job: anyone signed in to GitHub can download a public repository's artifacts.
 With `upload: true`, the step fails in a public repository before it checks anything out.
@@ -382,11 +384,12 @@ Pass `needs: ${{ toJSON(needs) }}`, because a composite action cannot read the `
 The step checks out agents `main` with the read key and `persist-credentials: false` and installs its pinned Python with agents' `mise-python`, which adds that Python to `PATH` for the rest of the job.
 
 It reads every page of this attempt's jobs.
-A job whose run, head commit, or attempt differs from this run fails the step, and the current job (`current-job`, default `CI census`) must be listed.
+A job whose run or head commit differs from this run, or whose attempt is above this attempt, fails the step; jobs from earlier attempts are dropped.
+The current job (`current-job`, default `CI census`) must be listed, and `report-job` must exactly match the display name of a job in this run.
 A job whose name equals a `job-ids` key, or is a matrix row named `<key> (…)`, and that has no conclusion yet takes `needs.<id>.result`.
 It then runs agents' `ci_census.py workflow` with one `--expected-unit` per `expected-units` entry and the report from `report-artifact`, and uploads `ci-census-workflow-<attempt>`.
 A healthy run records the same results as the per-repository census jobs did; a run whose job list is inconsistent fails instead of recording partial results.
 
 `tested-base` is dropped when the report job was skipped.
-With `require-selection: true`, a pull request run whose report job succeeded with no expected units fails.
+With `require-selection: true`, a pull request run whose report job succeeded but passed no `expected-units` value fails; an explicit `[]` is a valid empty selection.
 With `diagnostics-artifact`, the step also uploads the jobs file and census log under that name, even when the census fails.

@@ -14,16 +14,16 @@ inputs:
     description: JSON map from job display name to job id; a key also matches matrix rows named "<key> (...)".
     default: '{}'
   report-job:
-    description: Display name of the job that produced the test report.
+    description: Exact display name of the job that produced the test report; a name no job of this run has fails the census.
     required: true
   report-artifact:
     description: Artifact holding the test report; empty means no test report.
     default: ''
   expected-units:
-    description: JSON array of test units the report job must report.
-    default: '[]'
+    description: JSON array of test units the report job must report; pass the report job's selection output as is.
+    default: ''
   require-selection:
-    description: Fail a pull request run whose report job succeeded with no expected units.
+    description: Fail a pull request run whose report job succeeded but passed no expected-units value; an explicit [] is a valid empty selection.
     default: 'false'
   tested-base:
     description: Base commit the report job compared against; dropped when the report job was skipped.
@@ -37,6 +37,16 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Check the census inputs
+      shell: bash
+      env:
+        CENSUS_DEPLOY_KEY: ${{ inputs.deploy-key }}
+      run: |
+        if [[ -z "${CENSUS_DEPLOY_KEY//[[:space:]]/}" ]]; then
+          echo "::error title=agents-census::deploy-key is empty: the secret is unset or not passed to this run; fork and Dependabot pull requests receive no secrets"
+          exit 1
+        fi
+
     - name: Check out the census writer
       uses: actions/checkout@v7
       with:
@@ -73,6 +83,7 @@ runs:
         INPUT_NEEDS: ${{ inputs.needs }}
         INPUT_JOB_IDS: ${{ inputs.job-ids }}
         INPUT_CURRENT_JOB: ${{ inputs.current-job }}
+        INPUT_REPORT_JOB: ${{ inputs.report-job }}
       run: |
         set -o pipefail
         python3 "$CENSUS_ACTION_PATH/census.py" jobs 2>&1 | tee -a "$CENSUS_DIR/census.log"

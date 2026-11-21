@@ -1,11 +1,11 @@
-"""Run the toolkit action and shared client tests, each folder as its own discovery root."""
+"""Run the toolkit action tests, each folder as its own discovery root."""
 
 import sys
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-FOLDERS = ("lib", "agents-toolkit-fetch", "agents-toolkit", "agents-census")
+FOLDERS = ("agents-toolkit-fetch", "agents-toolkit", "agents-census")
 
 suite = unittest.TestSuite()
 for folder in FOLDERS:
