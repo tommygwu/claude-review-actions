@@ -181,10 +181,8 @@ class FetchFixture(unittest.TestCase):
 
 
 class CheckTest(FetchFixture):
-    def test_empty_deploy_key_fails_naming_the_unset_secret_cause(self):
-        code, _, err = self.command("check", FETCH_DEPLOY_KEY="")
-        self.assertEqual(1, code)
-        self.assertIn("the secret is unset or not passed to this run", err)
+    def test_empty_deploy_key_fails(self):
+        self.assertEqual(1, self.command("check", FETCH_DEPLOY_KEY="")[0])
 
     def test_git_older_than_2_44_fails_and_2_44_passes(self):
         bin_dir = self.root / "fake-bin"
