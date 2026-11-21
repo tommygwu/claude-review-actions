@@ -186,12 +186,13 @@ class WorkflowTest(CensusFixture):
                 self.assertEqual(0, code, err)
                 self.assertEqual(expected, self.writer_calls()[0]["tested_base"])
 
-    def test_require_selection_fails_a_successful_pull_request_report_with_no_units(self):
-        cases = {"pull request without units": ("pull_request", "success", "[]", "true", 1),
-                 "push without units": ("push", "success", "[]", "true", 0),
+    def test_require_selection_fails_a_successful_pull_request_report_that_passed_no_selection(self):
+        cases = {"pull request without a selection": ("pull_request", "success", "", "true", 1),
+                 "pull request with an empty selection": ("pull_request", "success", "[]", "true", 0),
+                 "push without a selection": ("push", "success", "", "true", 0),
                  "pull request with units": ("pull_request", "success", '["unit-a"]', "true", 0),
-                 "failed report": ("pull_request", "failure", "[]", "true", 0),
-                 "selection not required": ("pull_request", "success", "[]", "false", 0)}
+                 "failed report": ("pull_request", "failure", "", "true", 0),
+                 "selection not required": ("pull_request", "success", "", "false", 0)}
         for case, (event, conclusion, units, require, expected) in cases.items():
             with self.subTest(case):
                 self.log.unlink(missing_ok=True)
