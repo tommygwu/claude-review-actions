@@ -289,11 +289,44 @@ class SuitePlanCensusTest(CensusFixture):
                 self.assertFalse((self.census_dir / "ci-census").exists())
 
     def test_failed_job_without_executor_evidence_records_a_failed_producer(self):
-        self.record_jobs("push", "failure")
+        self.record_jobs("push", "failure", steps=[{"name": "Set up toolkit token=synthetic-credential", "conclusion": "failure"}])
         code, err = self.command("workflow", GITHUB_EVENT_NAME="push")
         self.assertEqual(0, code, err)
         self.assertEqual([{"id": "job", "kind": "producer", "status": "fail", "reason": "test",
-                           "collection_complete": True}], self.census()["units"])
+                           "collection_complete": True, "message": "failed step: Set up toolkit [REDACTED]"}], self.census()["units"])
+
+    def test_infrastructure_conclusions_preserve_sibling_censuses(self):
+        expected = self.emit_report("failed")["units"]
+        other = [
+            job(13, "Runner action", "action_required", head_sha=MERGE_SHA, **EXECUTION),
+            job(14, "Neutral check", "neutral", head_sha=MERGE_SHA, **EXECUTION),
+            job(15, "Cancelled check", "cancelled", head_sha=MERGE_SHA, **EXECUTION),
+        ]
+        self.record_jobs("push", "failure", other_jobs=other, **EXECUTION)
+        code, err = self.command("workflow", GITHUB_EVENT_NAME="push")
+        self.assertEqual(0, code, err)
+        self.assertEqual(expected, self.census()["units"])
+        for slug, reason in (("runner-action", "infrastructure"), ("neutral-check", "infrastructure"),
+                             ("cancelled-check", "cancelled")):
+            with self.subTest(job=slug):
+                self.assertEqual([{"id": "job", "kind": "producer", "status": "not-run", "reason": reason,
+                                   "collection_complete": False}], self.census(slug=slug)["units"])
+
+    def test_interrupted_report_job_keeps_test_evidence_and_a_distinct_producer(self):
+        report = self.emit_report("failed")
+        report["units"][0]["id"] = "job"
+        (self.report_dir / REPORT_FILE).write_text(json.dumps(report))
+        for conclusion, reason in (("cancelled", "cancelled"), ("action_required", "infrastructure")):
+            with self.subTest(conclusion=conclusion):
+                self.record_jobs("push", conclusion, **EXECUTION)
+                code, err = self.command("workflow", GITHUB_EVENT_NAME="push")
+                self.assertEqual(0, code, err)
+                test, producer = self.census()["units"]
+                self.assertEqual(report["units"][0], test)
+                self.assertNotEqual(test["id"], producer["id"])
+                self.assertEqual(("producer", "not-run", reason, False),
+                                 (producer["kind"], producer["status"], producer["reason"],
+                                  producer["collection_complete"]))
 
     def test_failed_job_rejects_a_known_artifact_that_could_not_be_downloaded(self):
         self.artifacts = [CURRENT_ARTIFACT]

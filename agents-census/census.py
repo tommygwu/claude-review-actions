@@ -3,11 +3,11 @@
 import json
 import os
 import re
+import runpy
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
-from tempfile import TemporaryDirectory
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 
@@ -15,6 +15,7 @@ from github_api import GitHub  # noqa: E402
 
 
 CENSUS_SCRIPT = "packages/openclaw-shared/src/openclaw_shared/ci_census.py"
+SUITE_PLAN_CENSUS_SCRIPT = ".github/scripts/ci_census.py"
 
 
 class CensusError(RuntimeError):
@@ -283,7 +284,7 @@ def suite_plan_units(directory, report):
     outcome = os.environ.get("REPORT_DOWNLOAD_OUTCOME")
     if outcome == "failure":
         raise CensusError("the ci-units artifact download failed")
-    if not files and outcome != "success" and report["conclusion"] in ("failure", "timed_out", "cancelled"):
+    if not files and outcome != "success" and report["conclusion"] != "success":
         return []
     if len(files) != 1 or files[0].name != f"ci-units-{report_slug(report['name'])}.json":
         raise CensusError(f"expected one ci-units report from {report['name']!r} attempt {report['run_attempt']}")
@@ -349,26 +350,41 @@ def valid_timestamp(value):
     return True
 
 
-def census_time(value):
-    return datetime.fromisoformat(value).astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+def suite_plan_job_units(units, producer):
+    if not units:
+        return [producer]
+    status = producer["status"]
+    if status == "pass" or (status == "fail" and any(unit["status"] == "fail" for unit in units)):
+        return units
+    identifier = producer["id"]
+    used = {unit["id"] for unit in units}
+    index = 1
+    while identifier in used:
+        identifier = f"{producer['id']}:{index}"
+        index += 1
+    return [*units, {**producer, "id": identifier}]
 
 
-def restore_execution_provenance(jobs, report, units, expected, tested_base):
-    for job in jobs:
-        if job["conclusion"] == "skipped":
-            continue
-        path = census_dir() / "ci-census" / census_name(job)
-        census = json.loads(path.read_text(encoding="utf-8"))
-        run = census["run"]
-        for field, source in (("started_at", "started_at"), ("finished_at", "completed_at")):
-            if value := job.get(source):
-                run[field] = census_time(value)
-        if tested_base:
-            run["tested_base"] = tested_base
+def suite_plan_censuses(jobs, report, units, expected, current_job, env):
+    writer = runpy.run_path(str(Path(environment("CENSUS_AGENTS")) / SUITE_PLAN_CENSUS_SCRIPT))
+    from openclaw_shared.ci_census import write_ci_census
+
+    output = census_dir() / "ci-census"
+    selected = [job for job in jobs if job["conclusion"] != "skipped"]
+    names = [census_name(job) for job in selected]
+    if any(not report_slug(job["name"]) for job in selected) or len(names) != len(set(names)):
+        raise CensusError("jobs have invalid or colliding census output identities")
+
+    for job in selected:
+        conclusion = "success" if job["name"] == current_job else job["conclusion"]
+        producer = writer["producer_unit"]({**job, "conclusion": conclusion})
+        job_units = suite_plan_job_units(units, producer) if job is report else [producer]
+        census = writer["census_for"](
+            job, job_units, env, job.get("completed_at"), env.get("OPENCLAW_CI_TESTED_BASE"),
+        )
         if job is report:
-            # The adapter kept every row. Incomplete or skipped units carry their own status.
             census["truncated"] = bool(expected) and {unit["id"] for unit in units} != set(expected)
-        path.write_text(json.dumps(census, sort_keys=True) + "\n", encoding="utf-8")
+        print(write_ci_census(census, output))
 
 
 def write_suite_plan_census(recorded, report, current_job, expected, env):
@@ -377,26 +393,11 @@ def write_suite_plan_census(recorded, report, current_job, expected, env):
     if env["GITHUB_EVENT_NAME"] == "pull_request" and "OPENCLAW_CI_TESTED_BASE" not in env:
         env["OPENCLAW_CI_TESTED_BASE"] = tested_merge_base()
 
-    report_job = report["name"]
     attempt = int(env["GITHUB_RUN_ATTEMPT"])
     recorded = [job for job in recorded if job["run_attempt"] == attempt or job["conclusion"] == "skipped"
                 or not prior_census(job, env, report=report)]
     units = suite_plan_units(census_dir() / "reports", report) if any(job is report for job in recorded) else []
-
-    with TemporaryDirectory(dir=census_dir()) as tmp:
-        directory = Path(tmp)
-        job_path = directory / "jobs.json"
-        job_path.write_text(json.dumps(recorded), encoding="utf-8")
-        report_dir = directory / "reports"
-        report_dir.mkdir()
-
-        # Use the writer's invocation-scoped report envelope and preserve each unit intact.
-        for index, unit in enumerate(units):
-            body = {"run_id": f"{env['GITHUB_RUN_ID']}.{report['run_attempt']}", "head_sha": env["GITHUB_SHA"],
-                    "unit": unit}
-            (report_dir / f"node-census-suite-plan-{index:08d}.json").write_text(json.dumps(body), encoding="utf-8")
-        write_census(job_path, report_dir, report_job, current_job, expected, env)
-    restore_execution_provenance(recorded, report, units, expected, env.get("OPENCLAW_CI_TESTED_BASE"))
+    suite_plan_censuses(recorded, report, units, expected, current_job, env)
 
 
 def workflow():
