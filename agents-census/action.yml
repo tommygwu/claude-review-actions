@@ -127,7 +127,7 @@ runs:
         INPUT_TESTED_BASE: ${{ inputs.tested-base }}
       run: |
         set -o pipefail
-        CENSUS_PYTHON="$UV_PYTHON" python3 "$CENSUS_ACTION_PATH/census.py" workflow 2>&1 | tee -a "$CENSUS_DIR/census.log"
+        CENSUS_PYTHON="$UV_PYTHON" "$UV_PYTHON" "$CENSUS_ACTION_PATH/census.py" workflow 2>&1 | tee -a "$CENSUS_DIR/census.log"
 
     - name: Upload job censuses
       uses: actions/upload-artifact@v7

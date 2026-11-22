@@ -389,7 +389,7 @@ Suite-plan census runs restore carried jobs to their original attempts. Other ru
 Before matching carried jobs, suite-plan runs verify terminal evidence from GitHub. If the attempt list cannot prove a job finished, they read the exact job record and require a matching terminal result.
 The current job (`current-job`, default `CI census`) must be listed, and `report-job` must exactly match the display name of a job in this run.
 Outside suite-plan runs, a job whose name equals a `job-ids` key, or is a matrix row named `<key> (…)`, and that has no conclusion yet takes `needs.<id>.result`.
-It then runs agents' `ci_census.py workflow` with one `--expected-unit` per `expected-units` entry and the report from `report-artifact`, and uploads `ci-census-workflow-<attempt>`.
+It writes the job records using the Agents census writer and uploads `ci-census-workflow-<attempt>`.
 An inconsistent job list fails the step.
 
 For suite-plan jobs, pass `report-artifact: ci-units-<report-job-slug>-${{ github.run_attempt }}`.
@@ -397,7 +397,7 @@ The artifact holds the producer's existing `ci-units-<report-job-slug>.json` fil
 On a failed-jobs rerun, the action uses each carried job's original attempt and timestamps.
 It reuses a published census for that execution and recovers the earlier units artifact if the census is absent.
 It preserves unit IDs, failed files and cases, and collection status. Missing reports fail the step for successful jobs. Malformed reports fail the step.
-A failed or cancelled job that never uploaded a report is recorded from its job conclusion.
+A job without a report is recorded from its conclusion. Failure records keep the sanitized failed step when GitHub provides one. A neutral or action-required job records an infrastructure result and keeps the census for the rest of the run.
 For suite-plan pull requests that omit `tested-base` or skip the report job, the action reads the first parent of the tested GitHub merge commit.
 On pushes, the action uses the pushed commit as the census head and includes a supplied tested base when the report job ran.
 
