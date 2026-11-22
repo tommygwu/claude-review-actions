@@ -386,8 +386,9 @@ The step checks out agents `main` with the read key and `persist-credentials: fa
 It reads every page of this attempt's jobs.
 A job whose run or head commit differs from this run, or whose attempt is above this attempt, fails the step.
 Suite-plan census runs restore carried jobs to their original attempts. Other runs ignore jobs from earlier attempts.
+Before matching carried jobs, suite-plan runs verify terminal evidence from GitHub. If the attempt list cannot prove a job finished, they read the exact job record and require a matching terminal result.
 The current job (`current-job`, default `CI census`) must be listed, and `report-job` must exactly match the display name of a job in this run.
-A job whose name equals a `job-ids` key, or is a matrix row named `<key> (…)`, and that has no conclusion yet takes `needs.<id>.result`.
+Outside suite-plan runs, a job whose name equals a `job-ids` key, or is a matrix row named `<key> (…)`, and that has no conclusion yet takes `needs.<id>.result`.
 It then runs agents' `ci_census.py workflow` with one `--expected-unit` per `expected-units` entry and the report from `report-artifact`, and uploads `ci-census-workflow-<attempt>`.
 An inconsistent job list fails the step.
 
@@ -402,4 +403,4 @@ On pushes, the action uses the pushed commit as the census head and includes a s
 
 Producer-only and pytest or Node census runs drop `tested-base` when the report job was skipped.
 With `require-selection: true`, a pull request run whose report job succeeded but passed no `expected-units` value fails; an explicit `[]` is a valid empty selection.
-With `diagnostics-artifact`, the step also uploads the jobs file and census log under that name, even when the census fails.
+With `diagnostics-artifact`, the step also uploads the jobs file and census log under that name, even when the census fails. An upload error does not change the census result.
