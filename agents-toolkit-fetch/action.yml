@@ -45,7 +45,7 @@ runs:
           skills/repository/registry.json
         sparse-checkout-cone-mode: false
 
-    # The resolver is agents code, so it runs on the Python agents pins; PATH stays the job's own.
+    # fetch.py gives the resolver its Linux library path; the job environment stays unchanged.
     - name: Install the resolver's pinned Python
       id: resolver-python
       uses: actions/setup-python@v6

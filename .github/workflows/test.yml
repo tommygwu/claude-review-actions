@@ -75,6 +75,10 @@ jobs:
             profile: openclaw
             cache: 'true'
             host-link: packages/openclaw-shared
+          - os: ubuntu-24.04-arm
+            profile: default
+            cache: 'false'
+            host-link: ''
     steps:
       - uses: actions/checkout@v5
         with:

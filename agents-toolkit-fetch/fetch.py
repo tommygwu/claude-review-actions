@@ -135,10 +135,16 @@ def move():
 
 
 def resolver(arguments, *, timeout):
-    command = [os.environ.get("FETCH_RESOLVER_PYTHON") or sys.executable, str(probe() / RESOLVER), *arguments]
+    python = os.environ.get("FETCH_RESOLVER_PYTHON") or sys.executable
+    env = git_environment()
+    if sys.platform == "linux" and os.environ.get("FETCH_RESOLVER_PYTHON"):
+        library = str(Path(python).parent.parent / "lib")
+        inherited = env.get("LD_LIBRARY_PATH", "")
+        env["LD_LIBRARY_PATH"] = library + (f":{inherited}" if inherited else "")
+    command = [python, str(probe() / RESOLVER), *arguments]
     try:
         result = subprocess.run(command, capture_output=True, text=True, timeout=timeout, check=False,
-                                env=git_environment())
+                                env=env)
     except subprocess.TimeoutExpired:
         raise FetchError(f"{arguments[0]} did not finish in {timeout} seconds") from None
     sys.stderr.write(result.stderr)
