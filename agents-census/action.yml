@@ -17,7 +17,7 @@ inputs:
     description: Exact display name of the job that produced the test report; a name no job of this run has fails the census.
     required: true
   report-artifact:
-    description: Artifact holding the test report; empty means no test report.
+    description: Test report artifact, or empty for producer-only census. For suite-plan reports, use ci-units-<report-job-slug>-<run-attempt>.
     default: ''
   expected-units:
     description: JSON array of test units the report job must report; pass the report job's selection output as is.
@@ -66,15 +66,8 @@ runs:
       shell: bash
       run: mkdir -p "$RUNNER_TEMP/agents-census/reports"
 
-    - name: Download the test report
-      if: inputs.report-artifact != ''
-      continue-on-error: true
-      uses: actions/download-artifact@v8
-      with:
-        name: ${{ inputs.report-artifact }}
-        path: ${{ runner.temp }}/agents-census/reports
-
     - name: Read this attempt's jobs
+      id: jobs
       shell: bash
       env:
         CENSUS_ACTION_PATH: ${{ github.action_path }}
@@ -84,9 +77,38 @@ runs:
         INPUT_JOB_IDS: ${{ inputs.job-ids }}
         INPUT_CURRENT_JOB: ${{ inputs.current-job }}
         INPUT_REPORT_JOB: ${{ inputs.report-job }}
+        INPUT_REPORT_ARTIFACT: ${{ inputs.report-artifact }}
       run: |
         set -o pipefail
         python3 "$CENSUS_ACTION_PATH/census.py" jobs 2>&1 | tee -a "$CENSUS_DIR/census.log"
+
+    - name: Read censuses from prior attempts
+      if: steps.jobs.outputs.prior-census-ids != ''
+      uses: actions/download-artifact@v8
+      with:
+        artifact-ids: ${{ steps.jobs.outputs.prior-census-ids }}
+        path: ${{ runner.temp }}/agents-census/prior-censuses
+        github-token: ${{ inputs.github-token }}
+        run-id: ${{ github.run_id }}
+
+    - name: Download the suite-plan report
+      id: suite-plan-report
+      if: steps.jobs.outputs.suite-plan-artifact-id != ''
+      continue-on-error: true
+      uses: actions/download-artifact@v8
+      with:
+        artifact-ids: ${{ steps.jobs.outputs.suite-plan-artifact-id }}
+        path: ${{ runner.temp }}/agents-census/reports
+        github-token: ${{ inputs.github-token }}
+        run-id: ${{ github.run_id }}
+
+    - name: Download the test report
+      if: steps.jobs.outputs.legacy-report == 'true'
+      continue-on-error: true
+      uses: actions/download-artifact@v8
+      with:
+        name: ${{ inputs.report-artifact }}
+        path: ${{ runner.temp }}/agents-census/reports
 
     - name: Write each job census
       shell: bash
@@ -94,8 +116,11 @@ runs:
         CENSUS_ACTION_PATH: ${{ github.action_path }}
         CENSUS_DIR: ${{ runner.temp }}/agents-census
         CENSUS_AGENTS: ${{ github.workspace }}/.agents-census
+        INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
         INPUT_REPORT_JOB: ${{ inputs.report-job }}
+        INPUT_REPORT_ARTIFACT: ${{ inputs.report-artifact }}
         INPUT_CURRENT_JOB: ${{ inputs.current-job }}
+        REPORT_DOWNLOAD_OUTCOME: ${{ steps.suite-plan-report.outcome }}
         INPUT_EXPECTED_UNITS: ${{ inputs.expected-units }}
         INPUT_REQUIRE_SELECTION: ${{ inputs.require-selection }}
         INPUT_TESTED_BASE: ${{ inputs.tested-base }}

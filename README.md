@@ -384,12 +384,22 @@ Pass `needs: ${{ toJSON(needs) }}`, because a composite action cannot read the `
 The step checks out agents `main` with the read key and `persist-credentials: false` and installs its pinned Python with agents' `mise-python`, which adds that Python to `PATH` for the rest of the job.
 
 It reads every page of this attempt's jobs.
-A job whose run or head commit differs from this run, or whose attempt is above this attempt, fails the step; jobs from earlier attempts are dropped.
+A job whose run or head commit differs from this run, or whose attempt is above this attempt, fails the step.
+Suite-plan census runs restore carried jobs to their original attempts. Other runs ignore jobs from earlier attempts.
 The current job (`current-job`, default `CI census`) must be listed, and `report-job` must exactly match the display name of a job in this run.
 A job whose name equals a `job-ids` key, or is a matrix row named `<key> (…)`, and that has no conclusion yet takes `needs.<id>.result`.
 It then runs agents' `ci_census.py workflow` with one `--expected-unit` per `expected-units` entry and the report from `report-artifact`, and uploads `ci-census-workflow-<attempt>`.
-A healthy run records the same results as the per-repository census jobs did; a run whose job list is inconsistent fails instead of recording partial results.
+An inconsistent job list fails the step.
 
-`tested-base` is dropped when the report job was skipped.
+For suite-plan jobs, pass `report-artifact: ci-units-<report-job-slug>-${{ github.run_attempt }}`.
+The artifact holds the producer's existing `ci-units-<report-job-slug>.json` file with its job name and units.
+On a failed-jobs rerun, the action uses each carried job's original attempt and timestamps.
+It reuses a published census for that execution and recovers the earlier units artifact if the census is absent.
+It preserves unit IDs, failed files and cases, and collection status. Missing reports fail the step for successful jobs. Malformed reports fail the step.
+A failed or cancelled job that never uploaded a report is recorded from its job conclusion.
+On pull requests, if the caller omits `tested-base`, the action reads the first parent of the tested GitHub merge commit.
+On pushes, the action uses the pushed commit as the census head and includes a tested base only when the caller provides one.
+
+Producer-only and pytest or Node census runs drop `tested-base` when the report job was skipped.
 With `require-selection: true`, a pull request run whose report job succeeded but passed no `expected-units` value fails; an explicit `[]` is a valid empty selection.
 With `diagnostics-artifact`, the step also uploads the jobs file and census log under that name, even when the census fails.

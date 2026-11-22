@@ -147,3 +147,7 @@ jobs:
           job-ids: '{"test": "test", "Toolkit end to end": "toolkit-e2e"}'
           report-job: test
           current-job: Toolkit census
+      - name: Round-trip suite-plan evidence through the census writer
+        env:
+          CENSUS_TEST_AGENTS: ${{ github.workspace }}/.agents-census
+        run: '"$UV_PYTHON" -B -m unittest discover -s agents-census -p test_suite_plan_census.py -v'

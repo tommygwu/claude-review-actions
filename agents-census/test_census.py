@@ -134,6 +134,13 @@ class JobsTest(CensusFixture):
         argv = self.writer_calls()[0]["argv"]
         self.assertEqual(str(self.census_dir / "jobs.json"), argv[argv.index("--jobs-file") + 1])
 
+    def test_legacy_report_artifact_uses_the_original_download_path(self):
+        output = self.root / "step-output"
+        code, err = self.command("jobs", INPUT_REPORT_ARTIFACT="CI-UNITS-legacy", GITHUB_OUTPUT=str(output))
+        self.assertEqual(0, code, err)
+        self.assertEqual("legacy-report=true\n", output.read_text())
+        self.assertEqual([FIRST_PAGE, f"{API}/repos/{REPOSITORY}", SECOND_PAGE], self.requests)
+
     def test_push_event_checks_jobs_against_github_sha(self):
         self.jobs = [{**entry, "head_sha": MERGE_SHA} for entry in self.jobs]
         code, err = self.command("jobs", GITHUB_EVENT_NAME="push")
