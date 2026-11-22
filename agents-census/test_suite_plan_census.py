@@ -39,8 +39,12 @@ class SuitePlanCensusTest(CensusFixture):
         self.previous = []
         self.artifacts = []
         self.parents = [{"sha": BASE}, {"sha": PR_HEAD}]
+        self.exact_jobs = {}
 
     def answer(self, request):
+        if request.full_url in self.exact_jobs:
+            self.requests.append(request.full_url)
+            return Response(self.exact_jobs[request.full_url])
         if request.full_url == f"{API}/repos/{REPOSITORY}/actions/runs/{RUN_ID}/artifacts?per_page=100":
             self.requests.append(request.full_url)
             return Response({"total_count": len(self.artifacts), "artifacts": self.artifacts})
@@ -55,9 +59,9 @@ class SuitePlanCensusTest(CensusFixture):
     def command(self, name, **env):
         return super().command(name, **{**self.host_env, **env})
 
-    def record_jobs(self, event, conclusion, *, other_jobs=(), **execution):
+    def record_jobs(self, event, conclusion, *, other_jobs=(), status="completed", **execution):
         self.jobs = [
-            job(11, REPORT_JOB, conclusion, head_sha=HEAD[event], **execution),
+            job(11, REPORT_JOB, conclusion, head_sha=HEAD[event], status=status, **execution),
             job(12, CURRENT_JOB, None, head_sha=HEAD[event]),
             *other_jobs,
         ]
@@ -124,6 +128,76 @@ class SuitePlanCensusTest(CensusFixture):
         self.assertNotIn("tested_base", census["run"])
         self.assertEqual(EXECUTION["started_at"], census["run"]["started_at"])
         self.assertEqual(EXECUTION["completed_at"], census["run"]["finished_at"])
+
+    def test_refreshes_stale_job_before_recovering_its_original_attempt(self):
+        expected = self.emit_report("pass", attempt=1)["units"]
+        self.artifacts.append(CURRENT_ARTIFACT)
+        stale = {"status": "in_progress", "started_at": EXECUTION["started_at"], "completed_at": None,
+                 "steps": [{"name": "Post checkout", "status": "in_progress"}]}
+        self.previous = [job(10, REPORT_JOB, None, run_attempt=1, **stale)]
+        self.exact_jobs = {
+            f"{API}/repos/{REPOSITORY}/actions/jobs/11": job(11, REPORT_JOB, "success", **EXECUTION),
+            f"{API}/repos/{REPOSITORY}/actions/jobs/10": job(10, REPORT_JOB, "success", run_attempt=1, **EXECUTION),
+        }
+        self.record_jobs("pull_request", None, **stale)
+        self.assertEqual(f"suite-plan-artifact-id={ORIGINAL_ARTIFACT['id']}\n",
+                         (self.root / "step-output").read_text())
+        code, err = self.command("workflow")
+        self.assertEqual(0, code, err)
+        census = self.census(attempt=1)
+        self.assertEqual(expected, census["units"])
+        self.assertEqual(EXECUTION["completed_at"], census["run"]["finished_at"])
+        for url in self.exact_jobs:
+            self.assertEqual(1, self.requests.count(url))
+
+    def test_refreshes_a_missing_conclusion_even_with_a_needs_result(self):
+        self.jobs = [job(11, REPORT_JOB, None, status="completed"), job(12, CURRENT_JOB, None)]
+        exact_url = f"{API}/repos/{REPOSITORY}/actions/jobs/11"
+        self.exact_jobs[exact_url] = job(11, REPORT_JOB, "failure", **EXECUTION)
+
+        code, err = self.command("jobs", INPUT_JOB_IDS=json.dumps({REPORT_JOB: "test"}))
+
+        self.assertEqual(0, code, err)
+        self.assertEqual([(REPORT_JOB, "failure"), (CURRENT_JOB, None)], self.recorded())
+        self.assertIn(exact_url, self.requests)
+
+    def test_uses_trusted_final_steps_without_an_exact_read(self):
+        self.emit_report("pass")
+        job_url = f"{API}/repos/{REPOSITORY}/actions/jobs/11"
+        self.record_jobs(
+            "pull_request", None, status="in_progress", workflow_name="Tests",
+            run_url=f"{API}/repos/{REPOSITORY}/actions/runs/{RUN_ID}", url=job_url,
+            html_url=f"https://github.com/{REPOSITORY}/actions/runs/{RUN_ID}/job/11",
+            started_at=EXECUTION["started_at"], completed_at=None,
+            steps=[{"name": "Complete job", "number": 13, "status": "completed", "conclusion": "success",
+                    "started_at": EXECUTION["completed_at"], "completed_at": EXECUTION["completed_at"]}],
+        )
+
+        self.assertNotIn(job_url, self.requests)
+        self.assertEqual([(REPORT_JOB, "success"), (CURRENT_JOB, None)], self.recorded())
+        code, err = self.command("workflow")
+        self.assertEqual(0, code, err)
+        self.assertEqual(EXECUTION["completed_at"], self.census()["run"]["finished_at"])
+
+    def test_rejects_exact_records_that_do_not_prove_this_execution_finished(self):
+        self.jobs = [job(11, REPORT_JOB, None, status="in_progress"), job(12, CURRENT_JOB, None)]
+        self.artifacts = [CURRENT_ARTIFACT]
+        exact_url = f"{API}/repos/{REPOSITORY}/actions/jobs/11"
+        for case, details in {
+            "different attempt": job(11, REPORT_JOB, "success", status="completed", run_attempt=1),
+            "still running": job(11, REPORT_JOB, "success", status="in_progress"),
+            "no conclusion": job(11, REPORT_JOB, None, status="completed"),
+        }.items():
+            with self.subTest(case=case):
+                self.exact_jobs[exact_url] = details
+                self.requests.clear()
+
+                code, err = self.command("jobs")
+
+                self.assertIn(exact_url, self.requests)
+                self.assertEqual(1, code, err)
+                self.assertFalse((self.census_dir / "jobs.json").exists())
+                self.assertFalse((self.root / "step-output").exists())
 
     def test_pr_selection_skip_does_not_truncate_proof_of_another_unit(self):
         expected = self.emit_report("pass", with_skipped=True)["units"]

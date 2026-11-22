@@ -104,13 +104,34 @@ def suite_plan_artifact_name(job_name, attempt):
     return f"ci-units-{report_slug(job_name)}-{attempt}"
 
 
-def suite_plan_jobs(api, rows, current, *, run_id, attempt, head):
+def refresh_incomplete_job(api, job, terminal_job):
+    try:
+        listed = terminal_job(job, os.environ)
+        if listed.get("conclusion"):
+            return listed
+    except ValueError:
+        pass
+    exact = api.get(f"/actions/jobs/{job['id']}")
+    identity = ("id", "name", "run_id", "run_attempt", "head_sha", "workflow_name", "run_url", "url", "html_url")
+    if not isinstance(exact, dict) or any(exact.get(key) != job.get(key) for key in identity):
+        raise CensusError(f"conflicting exact job identity: {job['name']}")
+    terminal = terminal_job(exact, os.environ)
+    if not terminal.get("conclusion"):
+        raise CensusError(f"exact job has no completed result: {job['name']}")
+    return terminal
+
+
+def suite_plan_jobs(api, rows, current, *, run_id, attempt, head, current_job):
+    sys.path.insert(0, str(Path(environment("CENSUS_AGENTS")) / "packages/openclaw-shared/src"))
+    from openclaw_shared.ci_census import terminal_job
+
     current_names = {job["name"] for job in current}
     earlier = {job["name"]: job for job in sorted(rows, key=lambda job: job["run_attempt"])
                if job["name"] not in current_names}
-    restored = current + list(earlier.values())
+    restored = [job if job["name"] == current_job else refresh_incomplete_job(api, job, terminal_job)
+                for job in current + list(earlier.values())]
     execution = ("name", "status", "conclusion", "started_at", "completed_at", "steps")
-    pending = {index: job for index, job in enumerate(current)
+    pending = {index: job for index, job in enumerate(restored[:len(current)])
                if job.get("status") == "completed" and job.get("conclusion") == "success"
                and all(job.get(key) for key in execution)}
 
@@ -119,7 +140,10 @@ def suite_plan_jobs(api, rows, current, *, run_id, attempt, head):
         if not pending:
             break
         previous, _ = api.pages(f"/actions/runs/{run_id}/attempts/{older}/jobs", "jobs")
-        candidates = [job for job in previous if job.get("run_id") == run_id and job.get("head_sha") == head
+        pending_starts = {(job["name"], job["started_at"]) for job in pending.values()}
+        candidates = [refresh_incomplete_job(api, job, terminal_job) for job in previous
+                      if (job.get("name"), job.get("started_at")) in pending_starts
+                      and job.get("run_id") == run_id and job.get("head_sha") == head
                       and type(job.get("run_attempt")) is int and 1 <= job["run_attempt"] <= older]
         for index, job in list(pending.items()):
             matches = [row for row in candidates if all(row.get(key) == job[key] for key in execution)]
@@ -155,13 +179,15 @@ def jobs():
     rows, _ = api.pages(f"/actions/runs/{run_id}/attempts/{attempt}/jobs", "jobs")
     head = head_sha()
     report_job = environment("INPUT_REPORT_JOB")
-    result = attempt_jobs(rows, run_id=run_id, attempt=attempt, head=head, needs=needs, job_ids=job_ids,
-                          current_job=os.environ.get("INPUT_CURRENT_JOB", "") or "CI census",
-                          report_job=report_job)
+    current_job = os.environ.get("INPUT_CURRENT_JOB", "") or "CI census"
     artifact = os.environ.get("INPUT_REPORT_ARTIFACT", "")
+    suite_plan = artifact.startswith("ci-units-")
+    result = attempt_jobs(rows, run_id=run_id, attempt=attempt, head=head, needs=needs,
+                          job_ids={} if suite_plan else job_ids,
+                          current_job=current_job, report_job=report_job)
     outputs = {}
-    if artifact.startswith("ci-units-"):
-        result = suite_plan_jobs(api, rows, result, run_id=run_id, attempt=attempt, head=head)
+    if suite_plan:
+        result = suite_plan_jobs(api, rows, result, run_id=run_id, attempt=attempt, head=head, current_job=current_job)
         reports = [job for job in result if job["name"] == report_job]
         if len(reports) != 1:
             raise CensusError(f"expected one job named {report_job!r}")
