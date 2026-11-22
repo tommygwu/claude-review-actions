@@ -3,6 +3,7 @@
 import io
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -248,6 +249,31 @@ class ResolveTest(FetchFixture):
         with patch.dict(os.environ, {"FETCH_RESOLVER_PYTHON": str(wrapper)}):
             self.assertEqual(self.main, self.resolved())
         self.assertEqual(["agents-revision"], log.read_text().splitlines())
+
+    def test_resolver_library_path_is_scoped_to_pinned_linux_python(self):
+        wrapper = self.root / "pinned python" / "bin" / "python"
+        wrapper.parent.mkdir(parents=True)
+        library = str(wrapper.parent.parent / "lib")
+        wrapper.write_text(
+            '#!/bin/sh\n'
+            '[ "$LD_LIBRARY_PATH" = "$EXPECTED_LIBRARY_PATH" ] || exit 127\n'
+            f'exec {shlex.quote(sys.executable)} "$@"\n', encoding="utf-8")
+        wrapper.chmod(0o755)
+        path_before = os.environ["PATH"]
+        self.checkout_probe()
+        self.assertEqual(0, self.command("move")[0])
+        for platform, inherited, expected in (
+                ("linux", "/caller/lib", library + ":/caller/lib"),
+                ("linux", "", library),
+                ("darwin", "/caller/lib", "/caller/lib")):
+            with self.subTest(platform=platform, inherited=inherited), \
+                    patch.object(fetch.sys, "platform", platform), patch.dict(os.environ, {
+                        "FETCH_RESOLVER_PYTHON": str(wrapper), "LD_LIBRARY_PATH": inherited,
+                        "EXPECTED_LIBRARY_PATH": expected}):
+                code, _, error = self.command("resolve")
+                self.assertEqual(0, code, error)
+                self.assertEqual(inherited, os.environ["LD_LIBRARY_PATH"])
+                self.assertEqual(path_before, os.environ["PATH"])
 
     def test_resolver_output_without_exactly_one_full_revision_line_fails(self):
         self.checkout_probe()

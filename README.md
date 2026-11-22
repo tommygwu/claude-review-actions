@@ -337,7 +337,7 @@ jobs:
           report-job: Test
 ```
 
-The programs use only the Python standard library and run on the runner's own `python3` (3.12 or later); fetch runs the agents resolver on the Python agents pins, through `actions/setup-python` without changing `PATH`.
+The programs use only the Python standard library and run on the runner's own `python3` (3.12 or later); fetch runs the agents resolver on the Python agents pins, through `actions/setup-python` without changing `PATH`. On Linux, fetch prepends that interpreter's `lib` directory to `LD_LIBRARY_PATH` only in the resolver subprocess, preserving any inherited library paths and leaving the job environment unchanged.
 Every input reaches a program through `env:`.
 
 ### agents-toolkit-fetch
