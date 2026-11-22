@@ -158,14 +158,14 @@ class SuitePlanCensusTest(CensusFixture):
                          {path.name for path in (self.census_dir / "ci-census").iterdir()})
 
     def test_rerun_does_not_duplicate_an_already_published_census(self):
-        units = self.emit_report("pass", attempt=1)["units"]
+        original = self.emit_report("pass", attempt=1)
         (self.report_dir / REPORT_FILE).unlink()
         self.previous = [job(10, REPORT_JOB, "success", run_attempt=1, **EXECUTION)]
         self.artifacts = [PRIOR_CENSUS, {**ORIGINAL_ARTIFACT, "expired": True}]
         prior = self.census_dir / "prior-censuses" / "ci-census-workflow-1"
         prior.mkdir(parents=True)
         census_file = prior / f"ci-census-{SLUG}-1.json"
-        body = {"schema": "ci-census", "units": units, "truncated": False, "run": {
+        body = {"schema": "ci-census", "units": original["units"], "truncated": False, "run": {
             "repository": REPOSITORY, "run_id": RUN_ID, "run_attempt": 1, "head_sha": MERGE_SHA, "job": REPORT_JOB,
             "workflow": "Tests", "event": "pull_request", "source": "ci", "tested_base": BASE,
             "started_at": EXECUTION["started_at"], "finished_at": EXECUTION["completed_at"],
@@ -179,6 +179,15 @@ class SuitePlanCensusTest(CensusFixture):
                 self.assertEqual(1, code, err)
                 self.assertIn("invalid prior census", err)
                 self.assertFalse((self.census_dir / "ci-census").exists())
+        producer_pass = {"id": "job", "kind": "producer", "status": "pass", "collection_complete": True}
+        census_file.write_text(json.dumps({**body, "units": [producer_pass]}))
+        (self.report_dir / REPORT_FILE).write_text(json.dumps(original))
+        code, err = self.command("workflow")
+        self.assertEqual(1, code, err)
+        self.assertIn("prior census has only the producer result", err)
+        self.assertFalse((self.census_dir / "ci-census").exists())
+        (self.report_dir / REPORT_FILE).unlink()
+
         census_file.write_text(json.dumps(body))
         code, err = self.command("workflow")
         self.assertEqual(0, code, err)

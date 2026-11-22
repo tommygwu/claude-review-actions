@@ -397,8 +397,8 @@ On a failed-jobs rerun, the action uses each carried job's original attempt and 
 It reuses a published census for that execution and recovers the earlier units artifact if the census is absent.
 It preserves unit IDs, failed files and cases, and collection status. Missing reports fail the step for successful jobs. Malformed reports fail the step.
 A failed or cancelled job that never uploaded a report is recorded from its job conclusion.
-On pull requests, if the caller omits `tested-base`, the action reads the first parent of the tested GitHub merge commit.
-On pushes, the action uses the pushed commit as the census head and includes a tested base only when the caller provides one.
+For suite-plan pull requests that omit `tested-base` or skip the report job, the action reads the first parent of the tested GitHub merge commit.
+On pushes, the action uses the pushed commit as the census head and includes a supplied tested base when the report job ran.
 
 Producer-only and pytest or Node census runs drop `tested-base` when the report job was skipped.
 With `require-selection: true`, a pull request run whose report job succeeded but passed no `expected-units` value fails; an explicit `[]` is a valid empty selection.

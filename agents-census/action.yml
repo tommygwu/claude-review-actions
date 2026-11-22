@@ -26,7 +26,7 @@ inputs:
     description: Fail a pull request run whose report job succeeded but passed no expected-units value; an explicit [] is a valid empty selection.
     default: 'false'
   tested-base:
-    description: Base commit the report job compared against; dropped when the report job was skipped.
+    description: Base commit the report job compared against. If omitted or the report job was skipped, suite-plan pull requests derive the tested merge base.
     default: ''
   current-job:
     description: Display name of the job that runs this action.

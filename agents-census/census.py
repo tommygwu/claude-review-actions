@@ -287,17 +287,17 @@ def census_name(job):
     return f"ci-census-{report_slug(job['name'])}-{job['run_attempt']}.json"
 
 
-def prior_census(report, env):
+def prior_census(job, env, *, report):
     directory = census_dir() / "prior-censuses"
-    files = list(directory.rglob(census_name(report)))
+    files = list(directory.rglob(census_name(job)))
     if not files:
         return False
     if len(files) != 1:
-        raise CensusError(f"multiple prior census files for {report['name']!r} attempt {report['run_attempt']}")
+        raise CensusError(f"multiple prior census files for {job['name']!r} attempt {job['run_attempt']}")
     body = json.loads(files[0].read_text(encoding="utf-8"))
     run = body.get("run") if isinstance(body, dict) else None
     identity = {"repository": env["GITHUB_REPOSITORY"], "run_id": int(env["GITHUB_RUN_ID"]),
-                "run_attempt": report["run_attempt"], "head_sha": env["GITHUB_SHA"], "job": report["name"],
+                "run_attempt": job["run_attempt"], "head_sha": env["GITHUB_SHA"], "job": job["name"],
                 "workflow": env["GITHUB_WORKFLOW"], "event": env["GITHUB_EVENT_NAME"], "source": "ci"}
     if base := env.get("OPENCLAW_CI_TESTED_BASE"):
         identity["tested_base"] = base
@@ -306,6 +306,10 @@ def prior_census(report, env):
             or body.get("schema") != "ci-census" or type(body.get("truncated")) is not bool
             or not valid_units(body.get("units"))):
         raise CensusError(f"invalid prior census: {files[0].name}")
+    producer_pass = {"id": "job", "kind": "producer", "status": "pass", "collection_complete": True}
+    if job is report and job["conclusion"] == "success" and body["units"] == [producer_pass]:
+        if suite_plan_units(census_dir() / "reports", job) != body["units"]:
+            raise CensusError(f"prior census has only the producer result for {job['name']!r}")
     return True
 
 
@@ -350,7 +354,7 @@ def write_suite_plan_census(recorded, report, current_job, expected, env):
     report_job = report["name"]
     attempt = int(env["GITHUB_RUN_ATTEMPT"])
     recorded = [job for job in recorded if job["run_attempt"] == attempt or job["conclusion"] == "skipped"
-                or not prior_census(job, env)]
+                or not prior_census(job, env, report=report)]
     units = suite_plan_units(census_dir() / "reports", report) if any(job is report for job in recorded) else []
 
     with TemporaryDirectory(dir=census_dir()) as tmp:
