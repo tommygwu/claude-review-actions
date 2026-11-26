@@ -107,6 +107,7 @@ Job rules:
 ## review
 
 Runs `anthropics/claude-code-action@v1` with `--model claude-opus-5-5`.
+It permits `dependabot[bot]` to start reviews for dependency updates.
 It disables the `Agent` and `Task` tools because background subagents can leave the headless reviewer waiting without posting.
 The caller owns the prompt, token, additional tools, and step environment.
 
